@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ title }}</title>
+<style>
+  @page { size: A4; margin: 14mm 12mm; }
+  * { box-sizing: border-box; }
+  body { font-family: Arial, sans-serif; font-size: 11px; color: #1a1a1a; background: #fff; margin: 0 auto; max-width: 190mm; padding: 16px 0; }
+  .no-print { text-align: center; margin-bottom: 14px; }
+  .no-print button { padding: 8px 22px; font-size: 14px; cursor: pointer; }
+  header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #1a1a1a; padding-bottom: 8px; }
+  h1 { font-size: 16px; margin: 0; }
+  .lab { color: #555; margin-top: 3px; }
+  header img { width: 64px; height: 64px; }
+  h2 { font-size: 12px; margin: 16px 0 5px; text-transform: uppercase; letter-spacing: 0.5px; page-break-after: avoid; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { display: table-header-group; }
+  tr { page-break-inside: avoid; }
+  th, td { border: 1px solid #aaa; padding: 3px 5px; text-align: left; vertical-align: top; overflow-wrap: break-word; }
+  th { background: #f0f0f0; font-size: 10px; }
+  .pairs td.k { width: 28%; color: #555; background: #fafafa; }
+  .pairs td.v { font-weight: bold; }
+  .empty { color: #666; font-style: italic; }
+  footer { margin-top: 18px; border-top: 1px solid #999; padding-top: 6px; color: #555; font-size: 9.5px; }
+  @media print {
+    .no-print { display: none; }
+    body { padding: 0; max-width: none; }
+  }
+</style>
+</head>
+<body>
+  <div class="no-print"><button onclick="window.print()">Print this record</button></div>
+  <header>
+    <div>
+      <h1>{{ title }}</h1>
+      <div class="lab">{{ cfg.company_name|default:cfg.lab_name }}{% if cfg.company_name %} · {{ cfg.lab_name }}{% endif %}</div>
+    </div>
+    <img src="{{ qr }}" alt="QR code for {{ identity }}">
+  </header>
+
+  {% for s in sections %}
+  <section>
+    <h2>{{ s.title }}</h2>
+    {% if s.pairs %}
+    <table class="pairs">
+      {% for k, v in s.pairs %}<tr><td class="k">{{ k }}</td><td class="v">{{ v }}</td></tr>{% endfor %}
+    </table>
+    {% elif s.rows %}
+    <table>
+      <thead><tr>{% for c in s.columns %}<th>{{ c }}</th>{% endfor %}</tr></thead>
+      <tbody>
+        {% for row in s.rows %}<tr>{% for cell in row %}<td>{{ cell|default:"—" }}</td>{% endfor %}</tr>{% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p class="empty">{{ s.empty }}</p>
+    {% endif %}
+  </section>
+  {% endfor %}
+
+  <footer>
+    Printed by {{ printed_by }} on {{ printed_at }} from the live record. This is a working record, not a
+    certificate of analysis; only a signed certificate states a conclusion. Every print is recorded.
+  </footer>
+</body>
+</html>

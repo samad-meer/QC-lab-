@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>COA {{ c.sample_no }} — {{ c.product_name }}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  /* Page numbering lives in the running foot so it survives a page break. */
+  @page {
+    size: A4;
+    margin: 14mm 14mm 18mm;
+    @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 9pt; color: #555; }
+  }
+
+  body {
+    font-family: Georgia, "Times New Roman", serif;
+    color: #1a1a1a; background: #fff;
+    max-width: 210mm; margin: 0 auto; padding: 14mm 16mm;
+    position: relative;
+  }
+  .watermark {
+    position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
+    pointer-events: none; z-index: 0;
+  }
+  .watermark span {
+    font-size: 52px; font-weight: bold; letter-spacing: 6px;
+    color: rgba(180, 30, 30, 0.13); transform: rotate(-30deg);
+    border: 6px solid rgba(180, 30, 30, 0.13); padding: 14px 40px; white-space: nowrap;
+  }
+  .page { position: relative; z-index: 1; }
+
+  /* ---- letterhead ---- */
+  .letterhead {
+    display: flex; align-items: flex-start; gap: 18px;
+    border-bottom: 3px double #1a1a1a; padding-bottom: 12px;
+  }
+  .letterhead img.logo { max-height: 22mm; max-width: 46mm; object-fit: contain; }
+  .letterhead .org { flex: 1; text-align: center; }
+  .letterhead .org h1 { font-size: 19px; letter-spacing: 0.4px; line-height: 1.25; }
+  .letterhead .org .lab { font-size: 13px; margin-top: 3px; }
+  .letterhead .org .meta {
+    font-family: Arial, sans-serif; font-size: 9.5px; color: #444;
+    margin-top: 5px; line-height: 1.5; white-space: pre-line;
+  }
+  .header-note { text-align: center; font-size: 11.5px; color: #444; margin-top: 3px; }
+  h2.doc-title {
+    text-align: center; font-size: 15px; letter-spacing: 4px;
+    margin-top: 11px; font-weight: normal; text-transform: uppercase;
+  }
+  .copy-tag { text-align: right; font-size: 11px; margin-top: 6px; font-family: Arial, sans-serif; }
+  .copy-tag b { color: #a02020; }
+
+  table.info { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 12px; }
+  table.info td { padding: 3.5px 8px; vertical-align: top; }
+  table.info td.k { width: 21%; color: #555; }
+  table.info td.v { width: 29%; font-weight: bold; }
+
+  table.results { width: 100%; border-collapse: collapse; margin: 10px 0 14px; font-size: 12px; }
+  table.results th, table.results td { border: 1px solid #888; padding: 5.5px 8px; text-align: left; }
+  table.results th { background: #f0f0f0; font-family: Arial, sans-serif; font-size: 11px; }
+  table.results thead { display: table-header-group; }  /* repeat on every page */
+  table.results tr { page-break-inside: avoid; }
+  td.outcome-PASS { color: #14601e; font-weight: bold; }
+  td.outcome-FAIL { color: #a02020; font-weight: bold; }
+  td.outcome-REPORTED { color: #444; }
+
+  sup.retested { font-family: Arial, sans-serif; font-size: 8.5px; font-weight: bold; margin-left: 2px; }
+  .retests h3 { font-size: 12.5px; margin: 14px 0 4px; letter-spacing: 1px; text-transform: uppercase; }
+  table.results.retests { font-size: 11px; margin-top: 4px; }
+  table.results.retests .sub { color: #555; font-size: 9.5px; font-family: Arial, sans-serif; }
+  .retests .note { font-family: Arial, sans-serif; font-size: 9.5px; color: #555; margin: 0 0 6px; }
+
+  .overall { font-size: 13px; margin: 12px 0 6px; }
+  .overall b { letter-spacing: 1px; }
+
+  /* As many signatures as the workflow requires — four to a row, then wrap. */
+  .sigs { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 16px; margin-top: 26px;
+          page-break-inside: avoid; }
+  .sig { flex: 1 1 22%; min-width: 140px; text-align: center; font-size: 11px; }
+  .sig .line { border-top: 1px solid #1a1a1a; margin: 30px 8px 6px; padding-top: 5px; font-weight: bold; }
+  .sig .role { color: #555; }
+  .sig .when { color: #555; font-size: 10px; }
+  .esign { font-size: 9px; color: #777; margin-top: 3px; }
+
+  .end-marker {
+    text-align: center; font-size: 10.5px; letter-spacing: 3px; color: #666;
+    margin: 22px 0 6px; font-family: Arial, sans-serif;
+  }
+  .footer-note {
+    font-family: Arial, sans-serif; font-size: 9.5px; color: #555;
+    line-height: 1.5; white-space: pre-line; margin-bottom: 8px;
+  }
+  footer {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    border-top: 1px solid #999; padding-top: 9px; font-size: 9.5px; color: #555;
+    font-family: Arial, sans-serif; page-break-inside: avoid;
+  }
+  footer img { width: 74px; height: 74px; }
+  .hash { word-break: break-all; max-width: 320px; }
+
+  .no-print { text-align: center; margin-bottom: 14px; }
+  .no-print button { padding: 8px 22px; font-size: 14px; cursor: pointer; }
+  /* Screen-only page count; print uses the @page counter above. */
+  .screen-pages { display: none; }
+  @media print {
+    .no-print { display: none; }
+    body { padding: 0; }
+  }
+</style>
+</head>
+<body>
+{% if not is_original %}
+<div class="watermark"><span>DUPLICATE COPY {{ copy_number }}</span></div>
+{% endif %}
+<div class="page">
+  <div class="no-print"><button onclick="window.print()">Print this page</button></div>
+
+  <header class="letterhead">
+    {% if logo %}<img class="logo" src="{{ logo }}" alt="">{% endif %}
+    <div class="org">
+      <h1>{{ lh.company_name|default:lh.lab_name|upper }}</h1>
+      {% if lh.company_name %}<div class="lab">{{ lh.lab_name }}</div>{% endif %}
+      <div class="meta">{% if lh.address %}{{ lh.address }}
+{% endif %}{% if lh.licence_no %}Licence No: {{ lh.licence_no }}{% endif %}{% if lh.phone %}{% if lh.licence_no %} · {% endif %}Tel: {{ lh.phone }}{% endif %}{% if lh.email %} · {{ lh.email }}{% endif %}{% if lh.website %} · {{ lh.website }}{% endif %}</div>
+    </div>
+    {% if logo %}<div style="width:46mm"></div>{% endif %}
+  </header>
+
+  <h2 class="doc-title">{{ c.layout.title|default:"Certificate of Analysis" }}</h2>
+  {% if c.layout.header_note %}<div class="header-note">{{ c.layout.header_note }}</div>{% endif %}
+
+  <div class="copy-tag">
+    Certificate No: <b>{{ c.sample_no }}/COA-v{{ c.certificate_version }}</b> &nbsp;·&nbsp;
+    {% if is_original %}ORIGINAL{% else %}<b>DUPLICATE COPY {{ copy_number }}</b>{% endif %}
+  </div>
+
+  <table class="info">
+    <tr><td class="k">Product</td><td class="v">{{ c.product_name }}</td>
+        <td class="k">Product code</td><td class="v">{{ c.product_code }}</td></tr>
+    {% if c.dosage_form or c.strength %}{% if not c.layout or c.layout.show_dosage_form %}
+    <tr><td class="k">Dosage form</td><td class="v">{{ c.dosage_form|default:"—" }}</td>
+        <td class="k">Strength</td><td class="v">{{ c.strength|default:"—" }}</td></tr>
+    {% endif %}{% endif %}
+    <tr><td class="k">{% if c.batch_no %}Batch / Lot No{% else %}Reference{% endif %}</td><td class="v">{{ c.batch_no|default:c.reference }}</td>
+        <td class="k">Section</td><td class="v">{{ c.section }}</td></tr>
+    {% if c.internal_batch_id and c.layout.show_internal_batch_id or c.manufacturing_site and c.layout.show_manufacturing_site %}
+    <tr>{% if c.internal_batch_id and c.layout.show_internal_batch_id %}<td class="k">Internal batch ID</td><td class="v">{{ c.internal_batch_id }}</td>{% endif %}
+        {% if c.manufacturing_site and c.layout.show_manufacturing_site %}<td class="k">Manufacturing site</td><td class="v">{{ c.manufacturing_site }}</td>{% endif %}</tr>
+    {% endif %}
+    {% if c.manufacturing_date or c.expiry_date %}
+    <tr><td class="k">Date of manufacture</td><td class="v">{{ c.manufacturing_date|default:"—" }}</td>
+        <td class="k">Expiry / retest date</td><td class="v">{{ c.expiry_date|default:"—" }}</td></tr>
+    {% if c.past_expiry %}
+    <tr><td class="k">Past expiry</td><td class="v" colspan="3">This batch was past its expiry date when received. Reason for testing: {{ c.past_expiry }}</td></tr>
+    {% endif %}
+    {% endif %}
+    <tr><td class="k">Sample No</td><td class="v">{{ c.sample_no }}</td>
+        <td class="k">Specification</td><td class="v">Version {{ c.spec_version }}</td></tr>
+    {% if issued_on %}
+    <tr><td class="k">Date received</td><td class="v">{{ received_on|date:"Y-m-d" }}</td>
+        <td class="k">Date of issue</td><td class="v">{{ issued_on|date:"Y-m-d" }}</td></tr>
+    {% endif %}
+    <tr><td class="k">Quantity received</td><td class="v">{{ c.quantity }}</td>
+        <td class="k">Received from</td><td class="v">{{ c.received_from }}</td></tr>
+    {% if c.analysis_started %}{% if not c.layout or c.layout.show_analysis_dates %}
+    <tr><td class="k">Analysis started</td><td class="v">{{ c.analysis_started|slice:":10" }}</td>
+        <td class="k">Analysis completed</td><td class="v">{{ c.analysis_completed|slice:":10" }}</td></tr>
+    {% endif %}{% endif %}
+    {% if c.storage_condition %}{% if not c.layout or c.layout.show_storage_condition %}
+    <tr><td class="k">Storage condition</td><td class="v" colspan="3">{{ c.storage_condition }}</td></tr>
+    {% endif %}{% endif %}
+  </table>
+
+  <table class="results">
+    <thead>
+      <tr><th style="width:4%">#</th><th style="width:26%">Test</th>{% if not c.layout or c.layout.show_method %}<th style="width:18%">Method</th>{% endif %}
+          <th style="width:24%">Specification limit</th><th style="width:16%">Result</th><th style="width:12%">Outcome</th></tr>
+    </thead>
+    <tbody>
+      {% for t in c.tests %}
+      <tr>
+        <td>{{ forloop.counter }}</td>
+        <td>{{ t.name }}</td>
+        {% if not c.layout or c.layout.show_method %}<td>{{ t.method }}</td>{% endif %}
+        <td>{{ t.limit_text }}</td>
+        <td>{{ t.value }}{% if t.unit %} {{ t.unit }}{% endif %}{% if t.retested %}<sup class="retested" title="Retested — see below">R</sup>{% endif %}</td>
+        <td class="outcome-{{ t.outcome }}">{% if t.outcome == "REPORTED" %}Reported{% else %}{{ t.outcome }}{% endif %}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% if c.retests %}
+  <div class="retests">
+    <h3>Retests</h3>
+    <table class="results retests">
+      <thead>
+        <tr><th style="width:18%">Test</th><th style="width:17%">Original result</th><th style="width:31%">Reason for retest</th>
+            <th style="width:17%">Authorized by</th><th style="width:17%">Retest result</th></tr>
+      </thead>
+      <tbody>
+        {% for r in c.retests %}
+        <tr>
+          <td>{{ r.test }}</td>
+          <td>{{ r.original_value }}{% if r.unit %} {{ r.unit }}{% endif %} <span class="outcome-FAIL">FAIL</span>
+              <div class="sub">{{ r.original_entered_at|slice:":10" }}</div></td>
+          <td>{{ r.reason }}<div class="sub">Requested by {{ r.requested_by }}</div></td>
+          <td>{{ r.authorized_by }}<div class="sub">{{ r.authorized_at|slice:":10" }}</div></td>
+          <td class="outcome-{{ r.retest_outcome }}">{{ r.retest_value }}{% if r.unit %} {{ r.unit }}{% endif %}
+              <div class="sub">{{ r.retest_entered_at|slice:":10" }}</div></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="note">R — the reported result is an authorized retest. The original result failed its specification
+      and stays on record.{% if c.investigations %} Investigated under
+      {% for i in c.investigations %}{{ i.reference }}{% if i.conclusion %} ({{ i.conclusion }}){% endif %}{% if not forloop.last %}, {% endif %}{% endfor %}.{% endif %}</p>
+  </div>
+  {% endif %}
+
+  <p class="overall">The above sample <b>{{ c.overall }}</b> with specification version {{ c.spec_version }}.</p>
+
+  <div class="sigs">
+    {% for row in chain %}
+    <div class="sig">
+      <div class="line">{{ row.signature.name_snapshot }}</div>
+      <div class="role">{{ row.title }}{% if row.holder %} ({{ row.holder }}){% endif %}</div>
+      <div class="when">{% if hour12 %}{{ row.signature.signed_at|date:"d M Y h:i A" }}{% else %}{{ row.signature.signed_at|date:"d M Y H:i" }}{% endif %}</div>
+      <div class="esign">Electronically signed</div>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="end-marker">— END OF CERTIFICATE —</div>
+
+  <div class="footer-note">A certificate of analysis is not a batch release decision.</div>
+
+  {% if c.layout.footer_note %}<div class="footer-note">{{ c.layout.footer_note }}</div>
+  {% elif lh.footer_note %}<div class="footer-note">{{ lh.footer_note }}</div>{% endif %}
+
+  <footer>
+    <div>
+      <div>Scan to verify this certificate is genuine and current:</div>
+      <div class="hash">Integrity hash (SHA-256): {{ cert.content_hash }}</div>
+      <div>Printed copy {{ copy_number }}{% if is_original %} (original){% endif %} — every print is recorded.</div>
+    </div>
+    <img src="{{ qr }}" alt="Verification QR code">
+  </footer>
+</div>
+</body>
+</html>

@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Label — {{ identity }}</title>
+<style>
+  @page { size: 80mm 50mm; margin: 0; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; color: #111; background: #fff; }
+  .no-print { text-align: center; padding: 14px; }
+  .no-print button { padding: 8px 22px; font-size: 14px; cursor: pointer; }
+  .label {
+    width: 80mm; height: 50mm; margin: 0 auto; padding: 3mm; overflow: hidden;
+    display: grid; grid-template-columns: 1fr 22mm; gap: 2mm; border: 1px dashed #999;
+  }
+  .lab { font-size: 7.5pt; color: #444; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .identity { font-family: "Courier New", monospace; font-size: 12pt; font-weight: bold; margin-top: 1mm; word-break: break-all; }
+  .heading { font-size: 9pt; font-weight: bold; margin-top: 0.5mm; }
+  table { border-collapse: collapse; margin-top: 1mm; font-size: 7.5pt; }
+  td { padding: 0.2mm 2mm 0.2mm 0; vertical-align: top; }
+  td.k { color: #555; white-space: nowrap; }
+  img { width: 22mm; height: 22mm; }
+  @media print {
+    .no-print { display: none; }
+    .label { border: none; margin: 0; }
+  }
+</style>
+</head>
+<body>
+  <div class="no-print"><button onclick="window.print()">Print label</button></div>
+  <div class="label">
+    <div>
+      <div class="lab">{{ cfg.company_name|default:cfg.lab_name }}</div>
+      <div class="identity">{{ identity }}</div>
+      <div class="heading">{{ heading }}</div>
+      <table>
+        {% for k, v in lines %}<tr><td class="k">{{ k }}</td><td>{{ v }}</td></tr>{% endfor %}
+      </table>
+    </div>
+    <img src="{{ qr }}" alt="QR code for {{ identity }}">
+  </div>
+</body>
+</html>

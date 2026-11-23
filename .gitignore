@@ -1,0 +1,26 @@
+# Secrets and local settings
+.env
+*.env
+!deploy/qclab.env.example
+
+# Data: never in version control
+backend/db.sqlite3*
+backend/media/
+backend/staticfiles/
+backups/
+
+# The client proposal carries pricing: kept beside the code, not in its history
+docs/proposal/
+
+# Generated
+__pycache__/
+*.pyc
+backend/.venv/
+frontend/node_modules/
+frontend/dist/
+frontend/*.tsbuildinfo
+
+# Local developer settings and editor lock files
+.env.local
+*.env.local
+~$*
