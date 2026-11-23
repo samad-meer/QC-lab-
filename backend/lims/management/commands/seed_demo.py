@@ -11,7 +11,11 @@ Idempotent — safe to run twice, and never overrides a workflow an
 administrator has already chosen for a product.
 
 Demo logins (all password: qclab1234):
-  frontdesk / analyst.gf / analyst.api / checker / qa.officer / labhead / sysadmin
+  frontdesk / analyst.gf / analyst.gf2 / analyst.api / checker / qa.officer / labhead /
+  prod.operator (Kamran Ali) / prod.officer (Asif Mehmood) / sysadmin
+
+Floxcip 500 mg, batch 26FB017, is entered by `manage.py seed_floxcip`, which needs these
+accounts, so run this first.
 """
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
@@ -166,6 +170,7 @@ class Command(BaseCommand):
         ], [ibu])
 
         self.stdout.write(self.style.SUCCESS(
-            "Seeded. Logins (password: %s): frontdesk, analyst.gf, analyst.api, checker, qa.officer, "
-            "labhead, sysadmin" % PASSWORD
+            "Seeded. Logins (password: %s): frontdesk, analyst.gf, analyst.gf2, analyst.api, checker, "
+            "qa.officer, labhead, prod.operator, prod.officer, sysadmin. "
+            "For Floxcip 500 mg batch 26FB017 run seed_floxcip next." % PASSWORD
         ))

@@ -12,12 +12,14 @@ standing in for the people who initialled the paper, and carry today's date.
     manage.py seed_floxcip --dry-run      do everything, then roll it back
     manage.py seed_floxcip --pdf PATH     also attach the scanned record to the batch
 """
+from datetime import date, timedelta
 from pathlib import Path
 
 from django.conf import settings
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils import timezone
 from rest_framework.test import APIClient
 
 from accounts.models import Role, User
@@ -39,6 +41,20 @@ class _DryRun(Exception):
 def at(day: int, hhmm: str) -> str:
     """A moment in October 2026, as the record writes it: at(2, "16:10")."""
     return f"2026-10-{day:02d}T{hhmm}"
+
+
+# The batch's own dates are fixed, as on the paper. The lab records around it (calibrations, lot
+# expiries, qualifications) are examples, and the API refuses a result that uses an instrument or lot
+# that has run out. So they keep their written date while it is still ahead, and otherwise run for
+# KEEP_VALID days from the day this is seeded. Without this a copy seeded after the written dates
+# fail on its first qualification, then its first calibration.
+KEEP_VALID = 30
+STAYS_OUT_OF_DATE = {"HPLC-01"}   # overdue on purpose, to show it is not offered
+
+
+def not_before(iso_date: str) -> str:
+    """The date as written, or KEEP_VALID days from today if that is later."""
+    return max(date.fromisoformat(iso_date), timezone.localdate() + timedelta(days=KEEP_VALID)).isoformat()
 
 
 # --- check points --------------------------------------------------------------
@@ -454,10 +470,12 @@ class Command(BaseCommand):
                            {"code": code, "name": name, "type": kind, "location": place, "serial_number": ""})["id"]
             self.call("post", f"/api/lab/instruments/{pk}/calibrate/", "checker", {
                 "kind": "CALIBRATION", "outcome": "PASS", "performed_at": when, "reference": ref,
-                "next_due": due, "comment": comment})
+                "next_due": due if code in STAYS_OUT_OF_DATE else not_before(due), "comment": comment})
             self.instruments[code] = pk
         self.materials = {}
         for row in MATERIALS:
+            if row["status"] == "AVAILABLE":
+                row = {**row, "expiry_date": not_before(row["expiry_date"])}
             pk = self.call("post", "/api/lab/materials/", "checker", row)["id"]
             if row["status"] == "AVAILABLE":
                 self.materials[row["code"]] = pk
@@ -470,7 +488,7 @@ class Command(BaseCommand):
         for analyst in ("analyst.gf", "analyst.gf2"):
             self.call("post", "/api/lab/qualifications/", "labhead", {
                 "user_id": self.people[analyst].id, "method": METHOD, "qualified_on": "2026-03-02",
-                "expires_on": "2027-03-01", "password": PASSWORD})
+                "expires_on": not_before("2027-03-01"), "password": PASSWORD})
 
     def change_record(self):
         self.call("post", "/api/lab/changes/", "checker", {

@@ -62,8 +62,20 @@ Backend — **port 8007**:
 
 ```powershell
 .venv\Scripts\python.exe manage.py seed_demo      # demo users + products
+.venv\Scripts\python.exe manage.py seed_floxcip   # optional: Floxcip 500 mg, batch 26FB017
 .venv\Scripts\python.exe manage.py runserver      # defaults to 8007
 ```
+
+`seed_floxcip` enters batch 26FB017 of Floxcip 500 mg Tablets as it was written on
+its paper record: the product and its specification, the twelve QC stages with every
+value and signature, the Core tablets and Final grain samples with their results
+(Final grain's loss on drying, 1.84 %, is out of specification, so the batch is held),
+and the lab records the testing used: instruments (HPLC-01 is overdue), standards and
+reagent lots (one is quarantined), the test method and who is qualified on it. It goes
+through the same API as the screens, so the audit trail is complete. Run `seed_demo`
+first, because it needs the demo accounts; add `--dry-run` to see it work and roll back,
+or `--pdf PATH` to attach a scanned record. It runs once and refuses if Floxcip is
+already on record. Like `seed_demo`, it never runs outside `DEBUG`.
 
 Frontend (port 5173, proxies /api and /verify to the backend):
 
