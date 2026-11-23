@@ -48,7 +48,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   const location = useLocation();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [tasks, setTasks] = useState(0);
-  const newest = useNotifications().data?.items[0]?.id;
+  const bell = useNotifications().data;
+  const newest = bell ? (bell.items[0]?.id ?? 0) : null; // null until the bell has first been read
 
   // Refresh the nav badges whenever the route changes — after signing or
   // sending work back, the count the user sees should already be right — and
@@ -61,7 +62,17 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refreshBadges();
-  }, [refreshBadges, location.pathname, newest]);
+  }, [refreshBadges, location.pathname]);
+
+  // A notification arriving means work may have landed on you. The first time the bell is read is
+  // not an arrival: this page has just refreshed the badges itself, so doing it again would only
+  // repeat the two slowest calls of every page load.
+  const lastSeen = useRef<number | null>(null);
+  useEffect(() => {
+    if (newest === null) return;
+    if (lastSeen.current !== null && newest > lastSeen.current) refreshBadges();
+    lastSeen.current = newest;
+  }, [newest, refreshBadges]);
 
   useEffect(() => {
     const timer = window.setInterval(refreshBadges, POLL_MS);

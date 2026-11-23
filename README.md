@@ -231,9 +231,12 @@ they were registered under).
 - **Email** is off until a mail server is named (`QCLAB_EMAIL_HOST` and friends in
   `deploy/qclab.env.example`). An email is queued in the same transaction as the
   action that caused it, so a signature never waits on a mail server and an action
-  that rolls back sends nothing. The queue goes out on the next look at any
-  person's bell, or on `send_due_alerts`, with retries; one that fails for good is
-  on the audit trail. Notification rules has a button to send yourself a test.
+  that rolls back sends nothing. A background worker in the web server sends the
+  queue within 30 seconds, and sweeps for due dates once an hour, so no page ever
+  waits on a mail server (`send_due_alerts` does the same from a scheduler, with
+  `QCLAB_BACKGROUND=0` to switch the worker off). Failed email is retried; one that
+  fails for good is on the audit trail. Notification rules has a button to send
+  yourself a test.
 - **Dashboard** (`/dashboard`, opened by clicking the system name): what is
   waiting on you, your notifications, where the samples you can see stand,
   and shortcuts for your role.

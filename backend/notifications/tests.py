@@ -175,6 +175,7 @@ class AlertTests(ExecutionTestBase):
     def test_the_sweep_runs_at_most_once_an_hour(self):
         sample = self.register_sample()
         self.due_in(sample, -1)
+        sweep_if_due()  # the background worker's job: the bell only reads
         self.login(self.analyst)
         self.assertEqual(self.client.get("/api/notifications/").data["items"][0]["kind"], "OVERDUE")
         Notification.objects.filter(kind="OVERDUE").update(read_at=None)
@@ -186,6 +187,15 @@ class AlertTests(ExecutionTestBase):
         AlertSweep.objects.update(last_run=timezone.now() - SWEEP_EVERY - timedelta(minutes=1))
         sweep_if_due()
         self.assertEqual(Notification.objects.filter(kind="OVERDUE", sample=second).count(), 1)
+
+    def test_opening_the_bell_does_no_background_work(self):
+        """Every open page asks the bell every 30 seconds. The sweep walks every open sample, so it must
+        not run inside that request: someone's page would wait for it."""
+        self.due_in(self.register_sample(), -1)
+        self.login(self.analyst)
+        self.assertEqual(self.client.get("/api/notifications/").status_code, 200)
+        self.assertFalse(Notification.objects.filter(kind="OVERDUE").exists())
+        self.assertFalse(AlertSweep.objects.exists(), "the poll must not even take the sweep's turn")
 
     def test_the_command_does_the_same(self):
         self.due_in(self.register_sample(), -1)

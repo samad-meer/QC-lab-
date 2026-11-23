@@ -75,7 +75,7 @@ use it instead of `manage.py` for everything in production.
 | Task | How often | Command |
 | ---- | --------- | ------- |
 | Backup | Nightly | `deploy/backup.ps1` |
-| Alerts and email | Hourly | `deploy/run.py send_due_alerts` |
+| Alerts and email | Not needed: the web server's background worker sends email every 30 seconds and sweeps due dates hourly. Schedule hourly only if you set `QCLAB_BACKGROUND=0` | `deploy/run.py send_due_alerts` |
 | Integrity check | Nightly | `deploy/run.py verify_integrity` |
 | Restore test | Quarterly | `deploy/restore_test.ps1` |
 
