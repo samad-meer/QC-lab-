@@ -20,6 +20,7 @@ from django.utils.dateparse import parse_date, parse_datetime
 
 from accounts.lab_zone import clock
 from accounts.models import Role
+from execution.files import FileRejected, check_upload, safe_display_name
 from .models import CheckpointKind, QcCheckpoint, QcSignoff, QcStep, StageKind
 
 MAX_STEPS = 40
@@ -28,6 +29,9 @@ MAX_SIGNOFFS = 10
 NUMERIC = (CheckpointKind.NUMBER, CheckpointKind.PERCENT)
 # A time a few minutes ahead of the server is a slow clock; more is a mistake.
 FUTURE_SLACK = timedelta(minutes=10)
+# What a Photo or file check point takes: pictures from a phone or a scanner, and PDFs.
+FILE_TYPES = ["jpg", "jpeg", "png", "webp", "pdf"]
+FILE_MAX_MB = 10
 
 
 class StageError(Exception):
@@ -322,6 +326,20 @@ def parse_value(cp, item: dict) -> dict | None:
         if not isinstance(answer, bool):
             raise StageError(f"“{label}”: answer yes or no.")
         return {"yes_no": answer}
+    if kind == CheckpointKind.FILE:
+        upload = item.get("file")
+        if upload is None:
+            return None
+        if not hasattr(upload, "chunks"):
+            raise StageError(f"“{label}”: choose a photo or file to attach.")
+        try:
+            extension, content_type, size, sha256 = check_upload(upload, FILE_TYPES, FILE_MAX_MB)
+        except FileRejected as e:
+            raise StageError(f"“{label}”: {e}") from None
+        # The name is what the record shows; the file itself goes with it, apart from the typed value.
+        return {"text": safe_display_name(upload.name), "file": {
+            "upload": upload, "extension": extension, "content_type": content_type, "size": size, "sha256": sha256,
+        }}
     return None
 
 

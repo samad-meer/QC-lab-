@@ -161,8 +161,9 @@ MODULES: list[tuple[str, str, list[tuple[str, str, str]]]] = [
              "Download reports as CSV, Excel or PDF, and lists such as samples, batches and users as "
              "Excel or PDF. Every export is recorded in the activity log."),
             ("report.performance", "See workload on the overview",
-             "Show what each analyst holds on the Reports overview. For planning the lab's work, not for "
-             "ranking people. The Analyst Workload and Workflow Bottlenecks reports are chosen below."),
+             "Show what each analyst holds on the Reports overview, and choose any person in Person Activity "
+             "instead of only yourself. For planning the lab's work, not for ranking people. The workload "
+             "reports are chosen below."),
             # One permission per report, from REPORTS below.
         ],
     ),
@@ -241,6 +242,16 @@ REPORTS: list[tuple[str, str, str, str]] = [
      "Workflow"),
     ("bottlenecks", "Workflow Bottlenecks",
      "How long work spends at each step, where it piles up, and what sends it back.", "Workflow"),
+    ("tasks-by-person", "Tasks by Person",
+     "How many tasks each person holds now, of each kind, and how many are late. For planning, not for "
+     "ranking people.", "Workflow"),
+    ("team-tasks", "Team Tasks",
+     "Every open task: who holds it, what and where it is, who gave it to them, when, and when it is due.",
+     "Workflow"),
+    ("person-activity", "Person Activity",
+     "One person's week or month: what was given to them, what they did and signed, and what they still hold. "
+     "Everyone can open and print their own; choosing someone else needs “See workload on the overview”.",
+     "Workflow"),
     ("audit-trail", "Audit Trail",
      "Who did what, when and from where, including every refused attempt.", "Quality and compliance"),
     ("document-control", "Document Control",

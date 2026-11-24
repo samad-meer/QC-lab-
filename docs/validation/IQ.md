@@ -23,6 +23,6 @@ ________ Date: ________ Reviewed by: ________ Date: ________
 | 16 | Port 8007 from another machine | Not reachable | | | |
 | 17 | Server clock | Synchronised to the named time source | | | |
 | 18 | Time zone in `settings.py` | The lab's | | | |
-| 19 | Scheduled tasks | Backup, alerts and integrity check scheduled and have run | | | |
-| 20 | Backup | A backup exists off this machine | | | |
+| 19 | Scheduled tasks and the background worker | Backup and integrity check scheduled and have run; `QCLAB_BACKGROUND` is 1, so the web server sends alerts and email itself, or `send_due_alerts` is scheduled hourly | | | |
+| 20 | Backup | A backup of the database and of the uploaded files exists off this machine | | | |
 | 21 | Restore test | `deploy/restore_test.ps1` succeeded and `verify_integrity` passed on the restored copy | | | |

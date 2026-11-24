@@ -2,6 +2,7 @@ import { useNavigate } from "react-router-dom";
 import type { SampleListItem } from "../types";
 import type { DateField } from "../useList";
 import { daysUntil, fmtDate } from "../util";
+import PersonChip from "./PersonChip";
 import { SampleStatusBadge } from "./StatusBadge";
 
 /** The dates any list of samples can be filtered on. */
@@ -69,7 +70,7 @@ export default function SampleTable({
                 <div className="cell-sub">{s.product_code} · {s.section_code}</div>
               </td>
               <td>{s.batch_label}</td>
-              <td>{s.analyst_name}</td>
+              <td><PersonChip id={s.assigned_analyst_id} name={s.analyst_name} role="Analyst" /></td>
               <td><DueCell due={s.due_date} done={["APPROVED", "REJECTED", "CANCELLED"].includes(s.status)} /></td>
               <td>
                 <SampleStatusBadge

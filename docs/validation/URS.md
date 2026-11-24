@@ -52,6 +52,9 @@ confirm which apply to you. Priority: **M** mandatory, **D** desired.
 | C5 | A released certificate can be withdrawn, and its QR page then says so | M | ISO/IEC 17025 7.8.8 |
 | C6 | Batch disposition is a separate decision by the quality unit | M | ICH Q7 |
 | C7 | Each product's QC stages are versioned and fixed on a batch when it is created; a batch is released only when every required stage has passed | M | 21 CFR 211.110, 211.165 |
+| C8 | A batch's recorded stage is written on its batch record: a value outside its limits is saved flagged with a reason, a change keeps the old value and needs a reason, the sign-off columns are signed in order by their roles with a password and each by a different person, and the first signature makes the values final | M | 21 CFR 211.188(b), 11.70 |
+| C9 | A supervisor can name who fills a stage and signs its first column; only that person can then write it, and reassigning keeps who had it and when | D | 21 CFR 211.188(b)(11) |
+| C10 | A batch record can hold a photograph or file as evidence, required or optional as the lab sets it. It is checked for what it really is, kept with who added it and its hash, changed only by a recorded correction that keeps the first, final once the stage is signed, covered by the integrity check, and shown only to people who can see the batch | M | 21 CFR 211.188, ALCOA+ |
 
 ## Security and data integrity
 
@@ -77,3 +80,13 @@ confirm which apply to you. Priority: **M** mandatory, **D** desired.
 | Q2 | An export says who generated it, when and with what filters, and is itself audited | M | ALCOA+ |
 | Q3 | A failed test, a failed sample and a batch disposition are kept apart | M | Brief |
 | Q4 | Change control records every change to specifications, methods and the system | M | EU GMP |
+| Q5 | Anyone can open and print their own activity for a week, a month or any dates; seeing someone else's needs its own permission; the print names the person, the period and the totals, and is itself audited | D | Brief, ALCOA+ |
+| Q6 | Whoever plans the work can see what each person holds, and for each task who gave it, when, and when it falls due, across samples, batch records, investigations and actions | D | Brief |
+| Q7 | A date filter offers the week and the month that have just ended, as well as the current ones | D | Brief |
+
+## Usability and operation
+
+| ID | Requirement | Priority | Reference |
+| -- | ----------- | -------- | --------- |
+| U1 | The screens work on a phone, a tablet and a large monitor: nothing runs off the screen, the menu stays reachable, and the certificate's QR page and a printed copy can be read on a phone | D | Brief |
+| U2 | Alert email and due-date alerts are sent by the system itself, within about a minute, and never make a page wait | D | Brief |

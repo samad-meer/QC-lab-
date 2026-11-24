@@ -64,6 +64,12 @@ def _testing_holder(sample, rows: list):
     return holder, waiting
 
 
+def _named_by(rows: list, accepted: bool = False):
+    """Who gave the testing to whoever holds it, or is waiting to accept it: the person on the last such row."""
+    rows = [a for a in rows if a.status == AssignmentStatus.ACCEPTED] if accepted else rows
+    return rows[-1].created_by if rows else None
+
+
 def waiting_work(user) -> list[dict]:
     """One row per sample in the lab: which queue it is in, and who it waits on."""
     samples = list(visible_samples(user).exclude(status__in=FINISHED))
@@ -93,6 +99,8 @@ def waiting_work(user) -> list[dict]:
         cert = latest_cert.get(s.pk)
         done, needed = progress.get(s.pk, {}).get("entered", 0), required.get(s.specification_id, 0)
         step, detail = TESTING_STEP, f"{done} of {needed} tests entered"
+        # The person it waits on, when it waits on one: a review waits on a role, whoever holds it.
+        holder_id, given_by = None, None
         if s.status == SampleStatus.IN_REVIEW:
             key = "REVIEW" if s.stages_after else "APPROVAL"
             step, detail = s.review_stage.name, ""
@@ -101,15 +109,19 @@ def waiting_work(user) -> list[dict]:
             key, step, detail, who = "RECEIPT", RECEIPT_STEP, "", "The front desk"
         else:
             holder, handing = _testing_holder(s, assignments.get(s.pk, []))
+            given = assignments.get(s.pk, [])
             if holder is None:
                 key = "ASSIGNMENT"
                 who = handing.to_user.display_name() if handing else "Whoever assigns work"
                 detail = "Waiting for them to accept" if handing else "Declined — needs reassigning"
+                holder_id, given_by = (handing.to_user_id, handing.created_by) if handing else (None, _named_by(given))
             elif testing and cert is not None and cert.status == "SUPERSEDED" and cert.returned_at:
                 key, who, since = "RETURNED", holder.display_name(), cert.returned_at
                 detail = cert.superseded_reason
+                holder_id, given_by = holder.pk, _named_by(given, accepted=True)
             else:
                 key, who = "TESTING", holder.display_name()
+                holder_id, given_by = holder.pk, _named_by(given, accepted=True)
         hold = holds.get(s.pk)
         rows.append({
             "queue_key": key,
@@ -117,6 +129,8 @@ def waiting_work(user) -> list[dict]:
             "section_id": s.section_id,
             "analyst_id": s.assigned_analyst_id,
             "analyst_name": s.assigned_analyst.display_name(),
+            "holder_id": holder_id,
+            "given_by": given_by.display_name() if given_by else "",
             "step_name": step,
             "task": Cell(s.sample_no, to=f"/samples/{s.pk}"),
             "type": "Sample",

@@ -57,6 +57,11 @@ def _file_response(content, file_format: str, name: str) -> HttpResponse:
     return response
 
 
+def summary_line(meta: dict) -> str:
+    """The figures above a list, on one line, for the head of a print."""
+    return "  ·  ".join(f"{tile['label']}: {tile['value']}" for tile in meta["summary"])
+
+
 def _csv_text(value) -> str:
     text = text_of(value)
     if text.startswith(_FORMULA_START) and not _NUMBER.match(text):
@@ -98,6 +103,7 @@ def to_xlsx(meta: dict, columns: list, rows: list[dict]) -> HttpResponse:
     lines = [
         f"Generated {meta['generated_at']} ({meta['timezone']}) by {meta['generated_by']}",
         *[f"{f['label']}: {f['value']}" for f in meta["applied"]],
+        *([summary_line(meta)] if meta.get("summary") else []),
         *([meta["note"]] if meta.get("note") else []),
         f"{len(rows)} rows",
     ]
@@ -209,6 +215,8 @@ def _opening(meta: dict, cfg) -> list:
     applied = " · ".join(f"{f['label']}: {f['value']}" for f in meta.get("applied", []))
     if applied:
         story.append(_para(applied, _style(7.5, after=2)))
+    if meta.get("summary"):
+        story.append(_para(summary_line(meta), _style(8, bold=True, after=2)))
     story.append(_para(
         f"Generated {meta['generated_at']} ({meta['timezone']}) by {meta['generated_by']}",
         _style(7.5, color=_MUTED, after=5),

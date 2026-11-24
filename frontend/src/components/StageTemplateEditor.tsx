@@ -89,6 +89,7 @@ const NO_LIMITS: Partial<Record<CheckpointKind, string>> = {
   TEXT: "Written text: no unit or limits",
   YES_NO: "Yes or no: no unit or limits",
   CHOICE: "One of the options below",
+  FILE: "A photo or PDF (up to 10 MB) the operator attaches: no unit or limits",
 };
 
 /** The limit as the record will print it, while it is typed: “Limit: 3.00 – 4.50 %”. */

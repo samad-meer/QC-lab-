@@ -171,6 +171,8 @@
 * { box-sizing: border-box; }
 
 html, body, #root { height: 100%; }
+/* A margin on the first thing inside (the sign-in page centres itself with one) must not push the whole page down. */
+#root { display: flow-root; }
 
 body {
   margin: 0;
@@ -225,9 +227,16 @@ h1, h2, h3 { font-family: var(--display); }
 
 .app-shell { position: relative; z-index: 1; display: flex; flex-direction: column; min-height: 100%; }
 
+/* The width of the bar and of the page, which grow with a large screen so the work uses it. */
+:root { --page-max: 1240px; }
+@media (min-width: 1600px) { :root { --page-max: 1400px; } }
+@media (min-width: 1920px) { :root { --page-max: 1600px; } }
+@media (min-width: 2400px) { :root { --page-max: 1920px; } }
+@media (min-width: 3200px) { :root { --page-max: 2400px; } }
+
 .topbar {
   position: sticky; top: 12px; z-index: 20;
-  margin: 12px 18px 0;
+  margin: 12px auto 0; width: calc(100% - 36px); max-width: var(--page-max);
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px 8px 14px; min-height: 62px;
   border-radius: 22px;
@@ -309,13 +318,6 @@ h1, h2, h3 { font-family: var(--display); }
   /* The menu may have wrapped to the left of the bar: open from the bar, not the button. */
   .nav-menu { position: static; }
   .nav-menu-panel.two-col { right: 12px; top: calc(100% + 8px); }
-}
-@media (max-width: 760px) {
-  /* Full width of the bar on a phone, below the button. */
-  .nav-menu-panel, .nav-menu-panel.two-col {
-    position: absolute; left: 10px; right: 10px; top: 100%; width: auto;
-    grid-template-columns: none; max-height: calc(100vh - 240px);
-  }
 }
 
 .nav-count {
@@ -423,15 +425,63 @@ a.icon-btn.active {
 .topbar[data-fit~="rows"] .topbar-right { gap: 6px; }
 .topbar[data-fit~="rows"] .topbar-right button.signout { font-size: 0; gap: 0; padding: 0; width: 40px; justify-content: center; }
 
-@media (max-width: 760px) {
-  .topbar { flex-wrap: wrap; margin: 8px 10px 0; top: 8px; row-gap: 6px; }
-  .brand { margin-right: auto; }
+/* The compact bar. Under 960px (COMPACT in Layout.tsx) it is one row: the logo, the bell, your
+   picture and a menu button. The links, Settings, the theme, My account and Sign out wait in the
+   menu, which opens below the bar as a panel only as tall as it needs, so a phone keeps its screen
+   for the work. */
+.menu-toggle, .nav-tools { display: none; }
+@media (max-width: 960px) {
+  .topbar {
+    flex-wrap: nowrap; margin: 8px 10px 0; width: auto; max-width: none; top: 8px;
+    min-height: 56px; padding: 6px 8px 6px 10px; gap: 8px; border-radius: 20px;
+  }
+  .brand { flex: 1 1 auto; margin-right: 0; min-width: 0; }
   .brand-text span, .who { display: none; }
-  .topnav { order: 3; flex-basis: 100%; }
+  .topbar-right { gap: 6px; }
+  .topbar-right .tool { display: none; }
+  .menu-toggle { display: grid; }
+  .topnav {
+    display: none; position: absolute; left: 0; right: 0; top: calc(100% + 8px); z-index: 40;
+    flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 2px; padding: 8px; flex: none;
+    max-height: calc(100vh - 92px); max-height: calc(100dvh - 92px); overflow-y: auto; overscroll-behavior: contain;
+    border-radius: 20px; background: var(--surface); border: 1px solid var(--card-border); box-shadow: var(--shadow-lg);
+  }
+  :root[data-theme="dark"] .topnav { background: #0f1630; }
+  .topbar.menu-open .topnav { display: flex; animation: pop-in 0.16s ease; }
+  .topnav > a, .nav-menu-button { width: 100%; min-height: 48px; padding: 0 14px; justify-content: flex-start; }
+  .topnav > a .nav-count { margin-left: auto; }
+  .nav-menu-button { justify-content: space-between; }
+  .nav-menu { position: static; }
+  .nav-menu-panel, .nav-menu-panel.two-col {
+    position: static; width: auto; max-height: none; overflow: visible; padding: 2px 0 6px 10px;
+    grid-template-columns: minmax(0, 1fr); background: transparent; border: 0; box-shadow: none; animation: none;
+  }
+  .nav-menu-panel.two-col a { min-height: 52px; padding: 8px 12px; }
+  .nav-tools {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px;
+    margin-top: 6px; padding-top: 10px; border-top: 1px solid var(--line);
+  }
+  .nav-tool {
+    display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 0 10px;
+    border-radius: 14px; font: inherit; font-size: 13.5px; font-weight: 650; color: var(--ink-2);
+    background: var(--surface-2); border: 1px solid var(--line); text-decoration: none; cursor: pointer;
+  }
+  .nav-tool:hover { background: var(--muted-soft); color: var(--ink); text-decoration: none; }
+  .nav-tool.active { color: var(--nav-active-ink); background: var(--nav-active-bg); border-color: transparent; }
+  .nav-signout { color: var(--fail); }
 }
 
-.page { max-width: 1240px; width: 100%; margin: 0 auto; padding: 26px 22px 80px; }
+.page { max-width: var(--page-max); width: 100%; margin: 0 auto; padding: 26px 22px 80px; }
 @media (max-width: 760px) { .page { padding: 18px 12px 64px; } }
+/* A phone must not blow text up when turned sideways. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+/* A finger needs about 40px: the small buttons and icon buttons grow on a touch screen only. */
+@media (pointer: coarse) {
+  button.small, .range-field input, .range-field select { min-height: 40px; }
+  .icon-btn.small { width: 40px; height: 40px; }
+  .period-tabs button { min-height: 40px; }
+  .topnav > a, .nav-menu-button { min-height: 44px; }
+}
 
 .page-head { margin-bottom: 22px; }
 .page-head h1 {
@@ -453,7 +503,8 @@ a.icon-btn.active {
 /* A heading with something beside it, on the right: it drops below on a phone. */
 .page-head-split { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 8px 24px; }
 .page-head-split > :first-child { flex: 1 1 320px; min-width: 0; }
-.page-head-aside { flex-shrink: 0; padding-bottom: 1px; }
+.page-head-aside { flex: 0 1 auto; min-width: 0; max-width: 100%; padding-bottom: 1px; }
+.task-reports { display: flex; flex-wrap: wrap; gap: 4px 16px; justify-content: flex-end; margin: 0 0 6px; font-size: 13px; }
 
 .breadcrumb { font-size: 13px; color: var(--ink-3); margin-bottom: 12px; }
 .breadcrumb a { color: var(--ink-2); font-weight: 650; }
@@ -698,6 +749,12 @@ a.link-button:hover { border-color: var(--ink-3); }
 .rec-range input { width: auto; }
 .rec-why { flex-basis: 100%; max-width: 520px; border-color: color-mix(in srgb, var(--fail) 40%, var(--line-strong)); }
 .rec-shown { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--ink); }
+/* A photo or file on the record: a small picture that opens in full, or a PDF link. */
+.rec-file { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 0; }
+.rec-file input[type="file"] { max-width: 100%; }
+.rec-photo-link { display: inline-flex; flex-direction: column; gap: 4px; align-items: flex-start; text-decoration: none; }
+.rec-photo { display: block; max-width: 240px; max-height: 160px; object-fit: contain; border: 1px solid var(--line); border-radius: 6px; background: var(--card-bg); }
+@media print { .rec-photo { max-height: 220px; max-width: 320px; } .rec-file input[type="file"] { display: none; } }
 .rec-point.flagged .rec-shown { color: var(--fail); }
 .rec-by { display: grid; gap: 1px; font-size: 12.5px; color: var(--ink-2); min-width: 0; }
 .rec-history summary { cursor: pointer; font-size: 11.5px; font-weight: 700; color: var(--brand); }
@@ -906,7 +963,13 @@ a.link-button:hover { border-color: var(--ink-3); }
 
 form.stack { display: grid; gap: 15px; }
 .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
-@media (max-width: 680px) { .form-row { grid-template-columns: 1fr; } }
+.form-row.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 680px) { .form-row, .form-row.three { grid-template-columns: minmax(0, 1fr); } }
+/* A list beside what is chosen from it: a role and its permissions, a person and their details.
+   Stacked on a narrow screen, as a column of fixed width beside another would be cut off. */
+.side-by-side { display: grid; grid-template-columns: 290px minmax(0, 1fr); gap: 16px; align-items: start; }
+.side-by-side.narrow { grid-template-columns: 220px minmax(0, 1fr); gap: 26px; }
+@media (max-width: 860px) { .side-by-side, .side-by-side.narrow { grid-template-columns: minmax(0, 1fr); gap: 16px; } }
 
 /* A div when the field holds buttons or several controls, which a label may not. */
 label.field, div.field { display: grid; gap: 6px; font-size: 12.5px; font-weight: 700; color: var(--ink-2); }
@@ -964,6 +1027,9 @@ input:focus, select:focus, textarea:focus {
 input:disabled, select:disabled { background: var(--surface-3); color: var(--ink-3); cursor: not-allowed; }
 input.short { max-width: 132px; }
 textarea { resize: vertical; min-height: 76px; }
+/* A phone must not zoom the page when a field is tapped: iOS does that for any field under 16px, and
+   leaves the page zoomed and scrolling sideways. After the rule above, or it would win. */
+@media (max-width: 760px) { input, select, textarea { font-size: 16px; } }
 
 /* ============================================================ Buttons
    Primary buttons are chunky and pressable: a gradient face on a
@@ -1077,6 +1143,16 @@ button.icon-btn.small, button.icon-btn.danger { padding: 0; display: grid; place
 .preview-note { padding: 28px 20px; text-align: center; color: var(--ink-2); font-size: 13.5px; }
 .modal .modal-sub { margin: 0; color: var(--ink-2); font-size: 13.5px; line-height: 1.5; }
 .modal .actions { display: flex; justify-content: flex-end; gap: 9px; margin-top: 2px; }
+/* On a phone a dialog is as tall as the screen allows, and its buttons stay at the foot of it while a
+   long form scrolls, so saving never means hunting for them. After the rules above, or they would win. */
+@media (max-width: 760px) {
+  .modal-backdrop { padding: 10px; }
+  .modal { padding: 20px 18px 0; max-height: calc(100vh - 20px); max-height: calc(100dvh - 20px); border-radius: 22px; }
+  .modal .actions {
+    position: sticky; bottom: 0; z-index: 1; margin: 2px -18px 0; padding: 12px 18px 16px;
+    background: var(--surface); border-top: 1px solid var(--line);
+  }
+}
 /* A long form in parts: a small heading over each group of fields. */
 .modal-part { display: grid; gap: 13px; padding-top: 14px; border-top: 1px solid var(--line); }
 .modal-part > h4 {
@@ -1110,7 +1186,9 @@ button.icon-btn.small, button.icon-btn.danger { padding: 0; display: grid; place
    corner, which Windows covers with its own notices. The newest is on top. Each kind has
    its colour: green saved, red refused, blue for information. */
 .toast-stack {
-  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 92px); right: 24px; z-index: 80;
+  position: fixed; top: calc(env(safe-area-inset-top, 0px) + 92px); z-index: 80;
+  /* On a wide screen it sits at the edge of the page, beside the work, not at the far edge of the screen. */
+  right: max(24px, calc((100vw - var(--page-max)) / 2 + 22px));
   display: flex; flex-direction: column-reverse; gap: 10px;
   width: min(420px, calc(100vw - 32px));
 }
@@ -1141,7 +1219,8 @@ button.icon-btn.small, button.icon-btn.danger { padding: 0; display: grid; place
 .toast button:hover { background: color-mix(in srgb, var(--tone) 14%, transparent); color: var(--ink); }
 @keyframes toast-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .toast { animation: none; } }
-@media (max-width: 760px) { .toast-stack { top: auto; bottom: 16px; right: 16px; } }
+/* On a phone they sit under the bar, not at the foot of the screen, where they would cover the buttons of a dialog. */
+@media (max-width: 760px) { .toast-stack { top: calc(env(safe-area-inset-top, 0px) + 72px); left: 10px; right: 10px; width: auto; } }
 
 /* A main button with nothing to do (nothing to save yet): plainly off, still readable,
    rather than the bright button faded out. */
@@ -1155,8 +1234,13 @@ button.primary:disabled {
    text), the journey as glowing orbs, the three rules as pills.
    Right: the sign-in card. */
 
-.login-page { position: relative; z-index: 1; display: grid; grid-template-columns: 1.1fr 1fr; min-height: 100%; }
-@media (max-width: 900px) { .login-page { grid-template-columns: 1fr; } .login-aside { display: none; } }
+.login-page { position: relative; z-index: 1; display: grid; grid-template-columns: 1.1fr 1fr; min-height: 100%; overflow-x: clip; }
+.login-aside, .login-main { min-width: 0; }
+/* On a very large screen it is one panel pair in the middle, not two panels stretched across it. */
+.login-page { max-width: 1760px; margin-inline: auto; }
+@media (min-height: 1200px) { .login-page { min-height: 1100px; margin-block: calc((100vh - 1100px) / 2); } }
+/* Two classes, so this wins over .login-aside below, which sets its own display: before, the panel never hid. */
+@media (max-width: 900px) { .login-page { grid-template-columns: minmax(0, 1fr); } .login-page .login-aside { display: none; } }
 
 .login-aside {
   margin: 18px 0 18px 18px; border-radius: 36px;
@@ -1223,7 +1307,7 @@ button.primary:disabled {
 
 /* The sign-in side. It is as tall as the window, so the card centres on the
    screen rather than on the aside, which can be far taller. */
-.login-main { position: relative; display: flex; align-items: center; justify-content: center; align-self: start; min-height: 100vh; padding: 72px 24px 40px; }
+.login-main { position: relative; display: flex; align-items: center; justify-content: center; align-self: start; min-height: min(100vh, 1100px); min-height: min(100dvh, 1100px); padding: 72px 24px 40px; }
 .login-main::before {
   content: ""; position: absolute; width: 520px; height: 520px; border-radius: 50%; z-index: -1;
   background: radial-gradient(circle, var(--brand-glow), transparent 65%); filter: blur(30px); opacity: 0.6;
@@ -2045,6 +2129,15 @@ a.brand:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
   box-shadow: var(--shadow-lg); animation: pop-in 0.16s ease; overflow: hidden;
 }
 :root[data-theme="dark"] .notif-panel { background: #0f1630; }
+/* On the compact bar the bell is not at the edge, so a panel opened from it would run off the screen:
+   it takes the width of the bar instead, below it. (After the rule above, or that would win.) */
+@media (max-width: 960px) {
+  .notif-wrap { position: static; }
+  .notif-panel {
+    left: 0; right: 0; width: auto; max-width: none; top: calc(100% + 8px);
+    max-height: calc(100vh - 92px); max-height: calc(100dvh - 92px); overflow-y: auto;
+  }
+}
 .notif-head { display: flex; align-items: center; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); }
 .notif-head b { font-size: 15px; }
 .notif-scroll { max-height: min(460px, 65vh); overflow-y: auto; }
@@ -2511,6 +2604,8 @@ button .btn-icon { width: 15px; height: 15px; flex-shrink: 0; }
 @media (max-width: 1080px) { .dash2-grid { grid-template-columns: minmax(0, 1fr); } }
 .dash2-col { display: grid; gap: 18px; align-content: start; min-width: 0; }
 .dash2-col > .card { margin: 0; }
+.dash2-loading .card-body { display: grid; gap: 14px; }
+.dash2-loading .sk.dash2-loading-chart { height: 150px; width: 100%; border-radius: 12px; margin-top: 6px; }
 
 .dash2-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; }
 .dash2-kpi {
@@ -2601,3 +2696,157 @@ a.dash2-kpi:hover { text-decoration: none; border-color: var(--line-strong); }
 .dash2-stats .dash-stat b { font-size: 22px; }
 .dash2-stats .dash-stat span { display: inline-flex; align-items: center; gap: 6px; }
 .dash2-stats .dash-stat i { display: inline-block; width: 8px; height: 8px; border-radius: 2px; flex: none; }
+
+/* ============================================================ My tasks: filters, list and board */
+.task-tiles.tk-tiles { margin-bottom: 12px; }
+button.task-tile { font: inherit; text-align: left; cursor: pointer; }
+.task-tile.picked { outline: 2px solid var(--brand); outline-offset: 2px; }
+.tk-also { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 0 0 14px; font-size: 12.5px; color: var(--ink-3); }
+.tk-also .tk-late-chip { color: var(--fail); }
+.tk-toolbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin-bottom: 16px; padding: 10px 12px;
+  border-radius: 16px; background: var(--card-bg); border: 1px solid var(--card-border); box-shadow: var(--card-shadow);
+}
+.tk-search {
+  display: inline-flex; align-items: center; gap: 8px; flex: 1 1 240px; max-width: 380px; padding: 0 12px;
+  border-radius: 12px; border: 1px solid var(--line-strong); background: var(--surface); color: var(--ink-3);
+}
+.tk-search:focus-within { border-color: var(--brand); }
+.tk-search input { width: 100%; padding: 8px 0; border: none; background: transparent; font: inherit; color: var(--ink); outline: none; box-shadow: none; }
+.tk-focus { display: inline-flex; align-items: center; gap: 6px; }
+.tk-toolbar .grow { flex: 1; }
+.tk-count { font-size: 12.5px; color: var(--ink-3); white-space: nowrap; }
+.tk-toolbar .seg button { display: inline-flex; align-items: center; gap: 6px; }
+
+.tk-section .card-head { gap: 10px; }
+.tk-ico {
+  display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; flex: none;
+  background: var(--brand-soft); color: var(--brand-soft-ink);
+}
+.tk-ico.hot, .tk-chip.hot { background: var(--hot-soft); color: var(--hot-ink); }
+.tk-ico.fail, .tk-chip.fail { background: var(--fail-soft); color: var(--fail); }
+.tk-ico.warn, .tk-chip.warn { background: var(--warn-soft); color: var(--warn); }
+.tk-ico.muted, .tk-chip.muted { background: var(--surface-2); color: var(--ink-3); }
+.tk-list { list-style: none; margin: 0; padding: 0; }
+.tk-row {
+  display: grid; grid-template-columns: minmax(190px, 250px) minmax(0, 1fr) auto; gap: 8px 22px; align-items: start;
+  padding: 14px 20px; border-top: 1px solid var(--line);
+}
+.tk-list .tk-row:first-child { border-top: none; }
+.tk-row:hover { background: color-mix(in srgb, var(--surface-2) 55%, transparent); }
+.tk-row-body { min-width: 0; font-size: 13.5px; }
+.tk-row-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+@media (max-width: 760px) {
+  .tk-row { grid-template-columns: minmax(0, 1fr); }
+  .tk-row-actions { justify-content: flex-start; }
+}
+.tk-head { display: grid; gap: 2px; min-width: 0; }
+.tk-due {
+  justify-self: start; margin-top: 4px; padding: 2px 9px; border-radius: 999px; font-size: 11.5px; font-weight: 700;
+  background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line);
+}
+.tk-due.soon { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.tk-due.late { background: var(--fail-soft); color: var(--fail); border-color: transparent; }
+
+.tk-board {
+  display: grid; grid-template-columns: repeat(var(--tk-cols, 5), minmax(210px, 1fr)); gap: 14px; align-items: start;
+  overflow-x: auto; padding-bottom: 6px; margin-bottom: 18px;
+}
+.tk-col {
+  display: grid; gap: 10px; align-content: start; min-height: 220px; padding: 12px; border-radius: 18px;
+  background: color-mix(in srgb, var(--surface-2) 75%, transparent); border: 1px solid var(--line);
+}
+/* A phone: one column read at a time, the next peeking in to say the board goes on sideways. */
+@media (max-width: 560px) {
+  .tk-board { grid-template-columns: repeat(var(--tk-cols, 5), 84%); scroll-snap-type: x mandatory; }
+  .tk-col { scroll-snap-align: start; }
+}
+.tk-col-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 8px; padding: 2px 4px 8px; border-bottom: 2px solid var(--line-strong); }
+.tk-col.todo .tk-col-head { border-bottom-color: var(--hot); }
+.tk-col.doing .tk-col-head { border-bottom-color: var(--chart-1); }
+.tk-col.review .tk-col-head { border-bottom-color: var(--chart-2); }
+.tk-col.overdue .tk-col-head { border-bottom-color: var(--fail); }
+.tk-col-head b { font-size: 14px; }
+.tk-col-head small { grid-column: 1 / -1; font-size: 11.5px; color: var(--ink-3); }
+.tk-col-count {
+  min-width: 24px; padding: 1px 8px; border-radius: 999px; text-align: center; font-size: 12px; font-weight: 800;
+  background: var(--surface); border: 1px solid var(--line);
+}
+.tk-col-empty {
+  margin: 0; padding: 18px 8px; text-align: center; font-size: 12.5px; color: var(--ink-3);
+  border: 1px dashed var(--line-strong); border-radius: 12px;
+}
+.tk-card {
+  display: grid; gap: 6px; padding: 12px; border-radius: 14px; font-size: 13px; min-width: 0;
+  background: var(--surface); border: 1px solid var(--line); border-left: 3px solid var(--line-strong);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+.tk-card.hot { border-left-color: var(--hot); }
+.tk-card.fail { border-left-color: var(--fail); }
+.tk-card.info { border-left-color: var(--brand); }
+.tk-card.warn { border-left-color: var(--warn); }
+.tk-card.late { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--fail) 22%, transparent); }
+.tk-chip {
+  justify-self: start; display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: 999px;
+  font-size: 11px; font-weight: 800; background: var(--brand-soft); color: var(--brand-soft-ink);
+}
+.tk-card-body { min-width: 0; overflow-wrap: anywhere; }
+.tk-card-body .cell-sub { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tk-card-actions { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.tk-card-actions .btn-link { padding: 5px 10px; font-size: 12.5px; }
+.task-tiles.tk-tiles { grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }
+.tk-card .tk-due { border-radius: 8px; }
+
+/* All samples: the board, in the same cards and columns as My tasks */
+.sb-board-head { margin-bottom: 14px; }
+.sb-col .tk-col-head { border-bottom-color: var(--sb-color); }
+.tk-card.sb-card { gap: 4px; border-left-color: var(--sb-color); }
+.sb-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.sb-card-product { font-size: 13px; font-weight: 700; }
+.sb-card-meta {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-top: 4px;
+  font-size: 12px; color: var(--ink-2);
+}
+.sb-card-meta > span:first-child { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+.sb-card-state { font-size: 11.5px; color: var(--ink-3); }
+.sb-card-sk { min-height: 118px; }
+.sb-more { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+
+/* Who holds the work: a chip with their initials; your own picked out. */
+.person-chip {
+  display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 2px 10px 2px 2px;
+  border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line);
+  font-size: 12.5px; font-weight: 700; color: var(--ink); vertical-align: middle;
+}
+.person-chip > span:not(.avatar) { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person-chip.mine {
+  background: var(--brand-soft); border-color: color-mix(in srgb, var(--brand) 45%, transparent); color: var(--brand-soft-ink);
+}
+.person-chip.mine b {
+  padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 800; letter-spacing: 0.3px;
+  background: var(--brand); color: var(--primary-ink);
+}
+.person-chip.none { padding: 3px 10px; border-style: dashed; color: var(--ink-3); font-weight: 600; }
+.sb-card-person { margin-top: 4px; }
+.sb-card .sb-card-meta .tk-due { margin-top: 0; }
+
+/* Check point kinds: what the stages already use, and the built-in kinds */
+table.grid.ck-table td { vertical-align: top; }
+.ck-count { font-size: 12px; font-weight: 750; color: var(--ink-2); margin-bottom: 4px; }
+.ck-names { display: grid; gap: 3px; max-width: 420px; }
+.ck-names > span {
+  font-size: 13px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ck-names .link-btn { justify-self: start; font-size: 12.5px; }
+.ck-used { display: grid; gap: 6px; }
+.ck-used > span { display: grid; gap: 1px; }
+.ck-used small { color: var(--ink-3); font-size: 12px; }
+.ck-used .link-btn { justify-self: start; font-size: 12.5px; }
+.ck-action { text-align: right; white-space: nowrap; }
+.ck-builtins { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; }
+.ck-builtin {
+  display: grid; gap: 3px; padding: 11px 13px; border-radius: 12px;
+  background: var(--surface-2); border: 1px solid var(--line);
+}
+.ck-builtin b { font-size: 13.5px; }
+.ck-builtin span { font-size: 12.5px; color: var(--ink-3); }

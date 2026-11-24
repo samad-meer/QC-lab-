@@ -15,6 +15,7 @@ export const BUILT_IN: { value: CheckpointKind; label: string; hint: string }[] 
   { value: "TEXT", label: "Text", hint: "Anything written: an equipment ID, a lot number, an observation" },
   { value: "YES_NO", label: "Yes / No", hint: "A simple confirmation" },
   { value: "CHOICE", label: "Choice from a list", hint: "Options you type, such as Complies / Does not comply" },
+  { value: "FILE", label: "Photo or file", hint: "A photo or PDF kept on the record: a balance printout, a label, a chromatogram" },
 ];
 
 const NUMERIC: CheckpointKind[] = ["NUMBER", "PERCENT"];
@@ -52,7 +53,7 @@ export function ChoiceOptions({ value, onChange, name }: {
   );
 }
 
-interface KindDraft {
+export interface KindDraft {
   name: string;
   kind: CheckpointKind;
   unit: string;
@@ -66,8 +67,10 @@ interface KindDraft {
  * One of the lab's own kinds of value: a name, what it is based on, and its unit,
  * decimals, limits or options. Saved once, it is offered in every stage.
  */
-export function KindModal({ editing, onSaved, onClose }: {
+export function KindModal({ editing, start, onSaved, onClose }: {
   editing?: CheckpointPreset;
+  /** A new kind filled in from somewhere, such as a check point a stage already has. */
+  start?: Partial<KindDraft>;
   onSaved: (kind: CheckpointPreset) => void;
   onClose: () => void;
 }) {
@@ -75,7 +78,7 @@ export function KindModal({ editing, onSaved, onClose }: {
     name: editing.name, kind: editing.kind, unit: editing.unit, decimals: editing.decimals,
     min_value: editing.min_value ?? "", max_value: editing.max_value ?? "",
     choices: editing.choices.length ? editing.choices : BLANK_CHOICES(),
-  } : { name: "", kind: "NUMBER", unit: "", decimals: 2, min_value: "", max_value: "", choices: BLANK_CHOICES() });
+  } : { name: "", kind: "NUMBER", unit: "", decimals: 2, min_value: "", max_value: "", choices: BLANK_CHOICES(), ...start });
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const set = (patch: Partial<KindDraft>) => setF((p) => ({ ...p, ...patch }));
@@ -107,7 +110,9 @@ export function KindModal({ editing, onSaved, onClose }: {
         <p className="modal-sub">
           {editing
             ? "Stages already saved keep the copy they took; this changes what is offered from now on."
-            : "For a value the list does not have. Once saved, it is offered in every stage's list, ready filled in."}
+            : start
+              ? "Filled in from a check point your stages already have. Give it a short name; once saved, it is offered in every stage's list, ready filled in. The stages themselves do not change."
+              : "For a value the list does not have. Once saved, it is offered in every stage's list, ready filled in."}
         </p>
         <label className="field">
           Name

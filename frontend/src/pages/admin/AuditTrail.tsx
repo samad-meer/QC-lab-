@@ -72,7 +72,7 @@ export default function AuditTrail() {
         filters={
           <>
             <DateRangeFilter range={range} />
-            <div className="form-row" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+            <div className="form-row three">
               <label className="field">
                 Action
                 <select value={action} onChange={(e) => setFilters({ action: e.target.value })}>

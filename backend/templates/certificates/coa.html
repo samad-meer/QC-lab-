@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>COA {{ c.sample_no }} — {{ c.product_name }}</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -106,6 +107,18 @@
   @media print {
     .no-print { display: none; }
     body { padding: 0; }
+  }
+  /* On a phone this is not an A4 page: it fills the screen and a wide table scrolls, not the page.
+     Screens only, so the printed copy is exactly as it was. */
+  @media screen and (max-width: 700px) {
+    body { padding: 10px; }
+    .letterhead { flex-wrap: wrap; justify-content: center; }
+    .letterhead > div[style] { display: none; }  /* the spacer that balances the logo on paper */
+    .letterhead .org { flex-basis: 100%; }
+    table.info, table.results { display: block; max-width: 100%; overflow-x: auto; }
+    table.info td.k, table.info td.v { width: auto; }
+    footer { flex-wrap: wrap; gap: 10px; }
+    .watermark span { font-size: 30px; padding: 8px 18px; }
   }
 </style>
 </head>

@@ -15,7 +15,7 @@ from batches.models import Batch
 from lims.models import Product
 from lims.workflow import samples_visible_to
 from qclab.listing import paginated, window_from
-from . import batches, compliance, dashboard, documents, export, results, samples, workflow  # noqa: F401
+from . import batches, compliance, dashboard, documents, export, results, samples, team, workflow  # noqa: F401
 from .engine import (
     CATEGORIES,
     REPORTS,
@@ -90,7 +90,7 @@ def dashboard_view(request):
 def report_definition(request, key):
     report = _report(request, key)
     can_act = bool(report.action) and has_perm(request.user, report.action[2])
-    return Response(definition(report, request, has_perm(request.user, EXPORT), can_act))
+    return Response(definition(report, request, report.may_export(request), can_act))
 
 
 @api_view(["GET"])
@@ -107,7 +107,8 @@ def report_page(request, key):
 
     return paginated(
         request, records, serialize,
-        summary=reachable(report.summary(records, request), request.user), period=period_label(report, request), **stamp(request),
+        summary=reachable(report.summary(records, request), request.user), period=period_label(report, request),
+        subject=report.subject(request), **stamp(request, report.sample_scope),
     )
 
 
@@ -119,8 +120,9 @@ def _chosen_format(request) -> str:
     return chosen
 
 
-def _may_export(request):
-    if not has_perm(request.user, EXPORT):
+def _may_export(request, report=None):
+    allowed = report.may_export(request) if report is not None else has_perm(request.user, EXPORT)
+    if not allowed:
         raise PermissionDenied("You do not have permission to export reports.")
 
 
@@ -128,7 +130,7 @@ def _may_export(request):
 @permission_classes([CanView])
 def report_export(request, key):
     report = _report(request, key)
-    _may_export(request)
+    _may_export(request, report)
     file_format = _chosen_format(request)
     records = select(report, request)
     limit = export.ROW_LIMITS[file_format]
@@ -140,7 +142,9 @@ def report_export(request, key):
         )
     rows = report.rows(rows, request)
     applied = filters_applied(report, request)
-    meta = {"key": report.key, "title": report.title, "note": report.note, "applied": applied, **stamp(request)}
+    meta = {"key": report.key, "title": report.title, "note": report.note, "applied": applied,
+            "summary": report.summary(records, request) if report.print_summary else [],
+            **stamp(request, report.sample_scope)}
     writer = {"csv": export.to_csv, "xlsx": export.to_xlsx, "pdf": export.to_pdf}[file_format]
     response = writer(meta, report.columns, rows)
     record(request.user, "REPORT_EXPORTED", "report", report.key, title=report.title,

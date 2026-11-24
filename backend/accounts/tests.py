@@ -19,10 +19,16 @@ from .models import LabConfig, Role, RolePermissionGrant, User
 from .permissions_registry import LAB_REGISTER_VIEWS, REPORTS, report_permission
 
 PW = "role-test-pass-1"
-# What accounts/0025 gave every role, and every role that could open reports.
+# What accounts/0025 gave every role, and every role that could open reports. The reports about
+# other people's work (the two workload reports and the two team reports) came with "See workload
+# on the overview" as well, and the Audit Trail with "View the audit trail".
 SEES_REGISTERS = set(LAB_REGISTER_VIEWS)
 ALL_REPORTS = {report_permission(key) for key, *_ in REPORTS}
-USUAL_REPORTS = ALL_REPORTS - {report_permission(k) for k in ("analyst-workload", "bottlenecks", "audit-trail")}
+USUAL_REPORTS = ALL_REPORTS - {
+    report_permission(k) for k in ("analyst-workload", "bottlenecks", "tasks-by-person", "team-tasks", "audit-trail")
+}
+# What accounts/0028 gave every active role, so that anyone can print their own week.
+OWN_REPORTS = {"report.view", report_permission("person-activity")}
 
 
 def make_image(size=(600, 400), fmt="PNG") -> BytesIO:
@@ -50,8 +56,9 @@ class RoleAdminTests(TestCase):
     def test_system_roles_are_seeded_with_their_permissions(self):
         # The five lab roles, and production's two (accounts/0024).
         self.assertEqual(Role.objects.count(), 7)
+        # Production has no other report, but opens its own Person Activity (accounts/0028).
         self.assertEqual(Role.objects.get(code="PRODUCTION_OPERATOR").permissions(),
-                         {"batch.view.all", "batch.record.fill", *SEES_REGISTERS})
+                         {"batch.view.all", "batch.record.fill", *SEES_REGISTERS, *OWN_REPORTS})
         self.assertEqual(self.roles["APPROVER"].permissions(), {
             "sample.view.all", "cert.print", "sample.assign", "sample.hold", "result.retest.authorize",
             "stage.waive", "sample.comment", "report.view", "report.export", "report.performance",

@@ -355,8 +355,9 @@ screen, `useList` (`frontend/src/useList.ts`) loads a page and `ListCard`,
 a page supplies only its words, its own filters and how a row looks. A new list
 needs none of this written again.
 
-- **Dates.** A named period (today, this week, this month, last 90 days, all
-  time), or any from and to, to the minute. The end includes its whole last
+- **Dates.** A named period (today, this week, last week, this month, last month,
+  last 90 days, all time), or any from and to, to the minute. Last week and last month
+  are the ones that have ended, which is what a weekly or monthly report is about. The end includes its whole last
   minute, and a date with no time covers the whole day. Sample lists can filter
   on the received date or the due date. Dates that make no sense are refused
   with a message, never ignored.
@@ -373,7 +374,7 @@ reason Pending Work and Overdue Work have no date filter; every other report doe
 ## Analytics and the activity log
 
 Two admin screens, both driven by the same time ranges — **Today / This week /
-This month / Last 90 days / All time**. Weeks start Monday and months on the 1st:
+Last week / This month / Last month / Last 90 days / All time**. Weeks start Monday and months on the 1st:
 "this week" means the week you are in, not a rolling seven days.
 
 **Analytics** (`/admin/analytics`) — samples received and released, median and
@@ -408,7 +409,7 @@ happened in the period, and every report you may open.
 | Sample reports | Sample Register, Sample History, Turnaround Time |
 | Test results and failures | Test Results Register, OOS Investigations, OOT Trends, Retest History |
 | Batch and product | Batch QC Summary, Product Quality History, Certificates of Analysis |
-| Workflow and performance | Pending Work, Overdue Work, Analyst Workload, Workflow Bottlenecks |
+| Workflow and performance | Pending Work, Overdue Work, Analyst Workload, Workflow Bottlenecks, Tasks by Person, Team Tasks, Person Activity |
 | Quality and compliance | Audit Trail, Document Control, Deviations & CAPA |
 
 **One way to report anything.** A report states which records it reads, its
@@ -440,6 +441,34 @@ Summary and Product Quality History are about one thing, so they are documents
   test complexity and investigation work vary too much for volume to rank anyone.
 - **One way to write a date.** Every report writes dates as `30-Oct-2026 14:05:12`
   in the lab's time zone, whoever opens it and wherever they are.
+
+**Who holds what, and what each person did** (`reports/team.py`). Three reports read
+one list of open work, worked out from the same places as My tasks, so they cannot
+disagree with a person's own list: samples waiting on someone (testing, handovers,
+returns), reviews and approvals (which wait on a *role* until someone takes them, so
+they are counted under the role), the recorded stages of a batch the supervisor named
+someone to fill, investigations, and CAPA actions.
+
+- **Tasks by Person** counts what each person holds, by kind, with how many are late and
+  how long the oldest has waited. A name opens that person's tasks in Team Tasks;
+  *Include people with no tasks* lists the rest.
+- **Team Tasks** lists every open task: who holds it, what it is and where (product and
+  batch), what it needs, who gave it, when, when it falls due and its status. *Assigned
+  in* takes a week, a month or any dates, so it shows what was handed out in them.
+  Filters: person, kind, product, only overdue.
+- **Person Activity** is one person's week or month: what was given to them, what they
+  did and signed (read from the activity log, so it is the same record an inspector
+  sees), and what they still hold. It opens on the signed-in person ("Me") with *This
+  week*, and filters by month, any dates and kind of work. The **PDF to print** button
+  heads the page with whose report it is. Everyone may open and print their own;
+  choosing another person needs `report.performance`, and printing another person's
+  needs `report.export`. It counts actions, which say nothing about how hard the work
+  was, so like Analyst Workload it is for planning and not a ranking.
+
+`accounts/0028` gives every active role "Open reports" with Person Activity and nothing
+else (each report is a permission of its own, so no other report opens), and the two
+team reports to roles that already held `report.performance`. Take them away on the
+Roles screen.
 
 **Exports.** CSV, Excel and PDF, built from the same rows as the screen, covering
 every page of the selection. Excel and PDF carry the filters, who generated them
@@ -605,7 +634,8 @@ and every batch gets its own run of them.
   record. On the product page it gets *steps* (Premixing, Preparation of binding
   solution, Drying), each with its instructions and *check points*: a number with its
   unit (kg, L, °C), a percentage, a start and end time, a time, a date, text, yes / no,
-  or a *choice from a list* whose options the lab types, marking which are acceptable.
+  a *photo or file* (a balance printout, a label, a chromatogram), or a *choice from a
+  list* whose options the lab types, marking which are acceptable.
   A number or percentage can have limits, such as LOD 3.00 – 4.50 %; a choice answered
   with an option not marked acceptable is flagged like a number outside its limits.
   A kind the list lacks is added with *+ New kind…* at the end of the list (Temperature
@@ -622,7 +652,15 @@ and every batch gets its own run of them.
   acknowledges every value out of limit, with a comment. The stage passes when the
   last column is signed. Release waits for that, and an optional stage with an
   unacknowledged value out of limit holds release too. Everything is append-only
-  (`batches/0006`). A recorded stage with no sign-off columns is still recorded passed
+  (`batches/0006`). Each check point is marked required or optional where it is set up,
+  and a required one keeps the stage from being signed until it is written.
+  **A photo or file** takes JPEG, PNG, WebP or PDF up to 10 MB, checked by its first
+  bytes and not its name, and is chosen with the other values on the batch page (a
+  phone offers its camera). It is kept under `MEDIA_ROOT` with no public address, served
+  only to people who can see the batch (`/api/batch-record-files/<id>/`, with its
+  checked type), hashed with SHA-256 and covered by `verify_integrity`. Changing it
+  needs a reason and the first stays on the record; the same file again changes nothing;
+  and it is final once the first column is signed (`batches/0010`). A recorded stage with no sign-off columns is still recorded passed
   or failed by QA, as before.
 - **Signed under every step, or once.** Each batch-record stage says where its columns
   are signed (`batches/0008`). *Under every step*, as the paper record has it, each step

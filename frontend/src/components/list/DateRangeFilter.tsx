@@ -5,7 +5,9 @@ import type { DateRange } from "../../useList";
 const PERIODS: { key: PeriodKey; label: string }[] = [
   { key: "today", label: "Today" },
   { key: "week", label: "This week" },
+  { key: "lastweek", label: "Last week" },
   { key: "month", label: "This month" },
+  { key: "lastmonth", label: "Last month" },
   { key: "quarter", label: "Last 90 days" },
   { key: "all", label: "All time" },
 ];

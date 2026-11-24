@@ -22,7 +22,8 @@ import { NotificationBell, POLL_MS, useNotifications } from "./Notifications";
  * lab's name and the zoom.
  */
 const FIT_STEPS = 5;
-const PHONE = 760;
+/** Under this width the bar is one compact row and the menu opens from a button (see .topbar in index.css). */
+const COMPACT = 960;
 
 function fitBar(bar: HTMLElement, menu: HTMLElement) {
   const wraps = () => {
@@ -31,8 +32,8 @@ function fitBar(bar: HTMLElement, menu: HTMLElement) {
   };
   let step = 0;
   bar.dataset.fit = "";
-  // A phone has its own layout, the menu on a row of its own.
-  if (window.innerWidth <= PHONE) return;
+  // A phone or a small window has its own layout: one row, and the menu opens from a button.
+  if (window.innerWidth <= COMPACT) return;
   while (step < FIT_STEPS && wraps()) {
     step += 1;
     bar.dataset.fit = Array.from({ length: step }, (_, i) => i + 1).join(" ");
@@ -42,6 +43,16 @@ function fitBar(bar: HTMLElement, menu: HTMLElement) {
   if (wraps()) bar.dataset.fit = "rows";
 }
 
+const SETTINGS_ICON = (
+  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+    <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="2" />
+    <path
+      d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
+      fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"
+    />
+  </svg>
+);
+
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, titles, can, logout } = useAuth();
   const { theme, toggle } = useTheme();
@@ -50,6 +61,8 @@ export default function Layout({ children }: { children: ReactNode }) {
   const [tasks, setTasks] = useState(0);
   const bell = useNotifications().data;
   const newest = bell ? (bell.items[0]?.id ?? 0) : null; // null until the bell has first been read
+  const [menuOpen, setMenuOpen] = useState(false);
+  const toggleButton = useRef<HTMLButtonElement>(null);
 
   // Refresh the nav badges whenever the route changes — after signing or
   // sending work back, the count the user sees should already be right — and
@@ -82,6 +95,35 @@ export default function Layout({ children }: { children: ReactNode }) {
       window.removeEventListener("focus", refreshBadges);
     };
   }, [refreshBadges]);
+
+  // The compact menu closes when a page opens, on Escape, on a click or tap outside the bar, and
+  // when the window grows wide enough for the full menu. Opened, it takes the keyboard's place (its
+  // links come before the bar's buttons in the page); closed with Escape, focus goes back to its button.
+  useEffect(() => setMenuOpen(false), [location.pathname]);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    menu.current?.querySelector<HTMLElement>("a, button")?.focus({ preventScroll: true });
+    const outside = (e: Event) => {
+      if (!bar.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        toggleButton.current?.focus();
+      }
+    };
+    const resize = () => {
+      if (window.innerWidth > COMPACT) setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", key);
+    window.addEventListener("resize", resize);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", key);
+      window.removeEventListener("resize", resize);
+    };
+  }, [menuOpen]);
 
   // The tab says which page this is, then the system's name as set in Settings.
   useEffect(() => {
@@ -151,7 +193,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     <Backdrop />
     <div className="app-shell">
       <a className="skip-link" href="#main">Skip to content</a>
-      <header className="topbar" ref={bar}>
+      <header className={`topbar${menuOpen ? " menu-open" : ""}`} ref={bar}>
         <Link to="/dashboard" className="brand" title="Open the dashboard">
           <BrandMark />
           <div className="brand-text">
@@ -160,7 +202,7 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
         </Link>
 
-        <nav className="topnav" aria-label="Main" ref={menu}>
+        <nav className="topnav" id="main-menu" aria-label="Main" ref={menu}>
           <NavLink to="/tasks">
             My tasks
             {tasks > 0 && <span className="nav-count">{tasks}</span>}
@@ -184,23 +226,27 @@ export default function Layout({ children }: { children: ReactNode }) {
           {LAB_REGISTER_VIEWS.some(can) && <NavLink to="/lab">Lab records</NavLink>}
           {can("report.view") && <NavLink to="/reports">Reports</NavLink>}
           {adminLinks.length > 0 && <AdminMenu links={adminLinks} />}
+          {/* On a small screen these leave the bar and wait in the menu, with their names. */}
+          <div className="nav-tools">
+            {can("config.manage") && <NavLink to="/admin/settings" className="nav-tool">{SETTINGS_ICON}Settings</NavLink>}
+            <button type="button" className="nav-tool" onClick={toggle}>
+              <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+              {theme === "dark" ? "Light theme" : "Dark theme"}
+            </button>
+            <Link to="/profile" className="nav-tool">My account</Link>
+            <button type="button" className="nav-tool nav-signout" onClick={() => void logout()}>Sign out</button>
+          </div>
         </nav>
 
         <div className="topbar-right">
           <NotificationBell />
           {can("config.manage") && (
-            <NavLink to="/admin/settings" className="icon-btn" title="Settings" aria-label="Settings">
-              <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
-                <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="2" />
-                <path
-                  d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
-                  fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"
-                />
-              </svg>
+            <NavLink to="/admin/settings" className="icon-btn tool" title="Settings" aria-label="Settings">
+              {SETTINGS_ICON}
             </NavLink>
           )}
           <button
-            className="icon-btn"
+            className="icon-btn tool"
             onClick={toggle}
             aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
             title={theme === "dark" ? "Light theme" : "Dark theme"}
@@ -214,12 +260,19 @@ export default function Layout({ children }: { children: ReactNode }) {
               <span>{user.designation || user.role?.name || "No role"}</span>
             </div>
           </Link>
-          <button className="signout" title="Sign out" onClick={() => void logout()}>
+          <button className="signout tool" title="Sign out" onClick={() => void logout()}>
             <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
               <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9"
                 fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             Sign out
+          </button>
+          <button type="button" ref={toggleButton} className="icon-btn menu-toggle" aria-label={menuOpen ? "Close the menu" : "Open the menu"}
+            aria-expanded={menuOpen} aria-controls="main-menu" onClick={() => setMenuOpen((o) => !o)}>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d={menuOpen ? "M6 6l12 12M18 6L6 18" : "M4 7h16M4 12h16M4 17h16"} fill="none" stroke="currentColor"
+                strokeWidth="2.2" strokeLinecap="round" />
+            </svg>
           </button>
         </div>
       </header>

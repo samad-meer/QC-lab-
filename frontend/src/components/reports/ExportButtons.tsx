@@ -2,7 +2,7 @@ import { useState } from "react";
 import { apiDownload } from "../../api";
 import { useToast } from "../Toast";
 
-const LABELS: Record<string, string> = { csv: "CSV", xlsx: "Excel", pdf: "PDF" };
+const LABELS: Record<string, string> = { csv: "CSV", xlsx: "Excel", pdf: "PDF to print" };
 
 /**
  * Downloads the report or list as it stands, filters and all. A failure, such
