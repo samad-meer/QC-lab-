@@ -11,7 +11,9 @@ import FailureHistory from "../components/FailureHistory";
 import { Message, TableSkeleton } from "../components/Feedback";
 import ResultGauges from "../components/ResultGauges";
 import SampleHero from "../components/SampleHero";
-import SignatureGrid, { initials } from "../components/SignatureGrid";
+import CertificatePeek from "../components/CertificatePeek";
+import SignatureGrid from "../components/SignatureGrid";
+import { SignOrbs } from "../components/SignatureChainCard";
 import SignModal from "../components/SignModal";
 import Stepper, { journeySteps } from "../components/Stepper";
 import { useToast } from "../components/Toast";
@@ -158,10 +160,17 @@ export default function Review() {
 
       <OverrideNotice rules={stageStep?.overridden ?? []} />
 
-      <div className="card">
-        <div className="card-body">
-          <Stepper status={sample.status} stages={cert.stages} reviewStage={sample.review_stage_order} mine={mine} />
-        </div>
+      <div className="journey-row">
+        <section className="card" aria-label="Review journey">
+          <div className="card-head">
+            <h2>Review journey</h2>
+            <span className="hint">{cert.chain.length} signatures, {cert.chain.length} different people — the last one releases the certificate.</span>
+          </div>
+          <div className="card-body">
+            <Stepper status={sample.status} stages={cert.stages} reviewStage={sample.review_stage_order} mine={mine} names={names} />
+          </div>
+        </section>
+        <CertificatePeek cert={cert} />
       </div>
 
       {failures > 0 && (
@@ -220,25 +229,13 @@ export default function Review() {
       {mine && stage ? (
         <div className="dock" role="region" aria-label="Sign">
           <div className="dock-people">
-            {cert.chain.map((row, i) => {
-              const signed = !!row.name_snapshot;
-              const current = !signed && row.code === stage.code;
-              return (
-                <span
-                  key={row.code}
-                  className={`dock-orb ${signed ? "done" : current ? "current" : "future"}`}
-                  aria-hidden="true"
-                >
-                  {signed ? initials(row.name_snapshot!) : current ? "You" : i + 1}
-                </span>
-              );
-            })}
+            <SignOrbs chain={cert.chain} awaitingCode={stage.code} />
             <span className="dock-text">
-              <b>Sign as “{fullTitle(stage.signature_title, stage.holder_title)}”</b>
+              <b>{signBlocked.length > 0 ? "Sign" : "Ready to sign"} as “{fullTitle(stage.signature_title, stage.holder_title)}”{signBlocked.length > 0 ? "" : "?"}</b>
               <br />
               {signBlocked.length > 0
                 ? `Not yet: ${signBlocked[0].message}${signBlocked.length > 1 ? ` (+${signBlocked.length - 1} more above)` : ""}`
-                : isFinal ? "Yours is the last signature — it releases the certificate." : `Next: ${next?.holder ?? "the next stage"}.`}{" "}
+                : `Your password is your signature. ${isFinal ? "Yours is the last signature — it releases the certificate." : `Next: ${next?.holder ?? "the next stage"}.`}`}{" "}
               {signBlocked.length === 0 && (
                 <span className="mono">sha256 {cert.content_hash.slice(0, 8)}…{cert.content_hash.slice(-8)}</span>
               )}

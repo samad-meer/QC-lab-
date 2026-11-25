@@ -16,12 +16,15 @@ import RawDataFields, { BLANK_RAW, hasReadings, rawBody, RawDataView } from "../
 import type { RawDraft } from "../components/lab/RawData";
 import SignModal from "../components/SignModal";
 import SampleHero from "../components/SampleHero";
-import Stepper, { journeySteps } from "../components/Stepper";
+import BatchProgress from "../components/BatchProgress";
+import CertificatePeek from "../components/CertificatePeek";
+import SignatureChainCard, { SignOrbs } from "../components/SignatureChainCard";
+import Stepper, { journeyNames, journeySteps } from "../components/Stepper";
 import { CertStatusBadge, OutcomeBadge } from "../components/StatusBadge";
 import { useToast } from "../components/Toast";
 import PrintLinks from "../components/PrintLinks";
 import type {
-  Certificate, Execution, ResultOptions, RetestKind, RetestView, SampleDetail, TestDefinition, TestResult,
+  BatchDetail, Certificate, Execution, ResultOptions, RetestKind, RetestView, SampleDetail, TestDefinition, TestResult,
 } from "../types";
 import { fmtDate, fmtDateTime } from "../util";
 
@@ -202,6 +205,41 @@ export default function SampleDetailPage() {
   const [loadError, setLoadError] = useState("");
   const [rawOptions, setRawOptions] = useState<ResultOptions | null>(null);
   const { exec, setExec, error: execError, reload: reloadExec } = useExecution(id);
+  // The certificate now in force (in review, or released): who has signed it and who is next.
+  const [liveCert, setLiveCert] = useState<Certificate | null>(null);
+  const liveId = sample?.certificates
+    .filter((c) => c.status === "IN_REVIEW" || c.status === "APPROVED")
+    .sort((a, b) => b.version - a.version)[0]?.id ?? null;
+  const liveKey = `${sample?.status}-${sample?.review_stage_order}`;
+  // The batch it belongs to, for the QC stages it is going through.
+  const [batch, setBatch] = useState<BatchDetail | null>(null);
+  const batchId = sample?.batch_id ?? null;
+  useEffect(() => {
+    if (batchId === null) {
+      setBatch(null);
+      return undefined;
+    }
+    let live = true;
+    apiGet<BatchDetail>(`/api/batches/${batchId}/`)
+      .then((b) => live && setBatch(b))
+      .catch(() => live && setBatch(null));
+    return () => {
+      live = false;
+    };
+  }, [batchId, liveKey]);
+  useEffect(() => {
+    if (liveId === null) {
+      setLiveCert(null);
+      return undefined;
+    }
+    let live = true;
+    apiGet<Certificate>(`/api/certificates/${liveId}/`)
+      .then((c) => live && setLiveCert(c))
+      .catch(() => live && setLiveCert(null));
+    return () => {
+      live = false;
+    };
+  }, [liveId, liveKey]);
 
   const load = useCallback(async () => {
     try {
@@ -370,23 +408,39 @@ export default function SampleDetailPage() {
         </div>
       )}
 
-      <div className="card">
-        <div className="card-body">
-          <Stepper
-            status={sample.status}
-            stages={sample.workflow.stages}
-            reviewStage={sample.review_stage_order}
-            mine={myTurn}
-          />
-          {sample.can_sign && (
-            <div className="actions-bar" style={{ marginTop: 16, justifyContent: "center" }}>
-              <button className="primary" onClick={() => navigate(`/samples/${sample.id}/review`)}>
-                ✎ Open the review{sample.my_turn ? " — it is waiting for you" : ""} →
-              </button>
-            </div>
-          )}
-        </div>
+      <div className="journey-row">
+        <section className="card" aria-label="Where this sample is">
+          <div className="card-head">
+            <h2>{liveCert ? "Review journey" : "Where this sample is"}</h2>
+            <span className="hint">
+              {liveCert
+                ? `${liveCert.chain.length} signatures, ${liveCert.chain.length} different people — the last one releases the certificate.`
+                : `Step ${currentIndex >= 0 ? currentIndex + 1 : steps.length} of ${steps.length}${currentIndex >= 0 ? ` · ${steps[currentIndex].label}` : ""}`}
+            </span>
+          </div>
+          <div className="card-body">
+            <Stepper
+              status={sample.status}
+              stages={sample.workflow.stages}
+              reviewStage={sample.review_stage_order}
+              mine={myTurn}
+              names={journeyNames(exec, sample.workflow.stages, sample.analyst_name)}
+            />
+            {sample.can_sign && (
+              <div className="actions-bar" style={{ marginTop: 16, justifyContent: "center" }}>
+                <button className="primary" onClick={() => navigate(`/samples/${sample.id}/review`)}>
+                  ✎ Open the review{sample.my_turn ? " — it is waiting for you" : ""} →
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+        {liveCert && <CertificatePeek cert={liveCert} />}
       </div>
+
+      {liveCert && <SignatureChainCard cert={liveCert} />}
+
+      {batch && <BatchProgress batch={batch} forStageId={sample.qc_stage_id} />}
 
       <div className="card">
         <div className="card-head">
@@ -653,6 +707,25 @@ export default function SampleDetailPage() {
           </ul>
         </div>
       </div>
+
+      {liveCert && liveCert.status === "IN_REVIEW" && liveCert.can_sign && liveCert.awaiting_stage && (
+        <div className="dock" role="region" aria-label="Your signature is waiting">
+          <div className="dock-people">
+            <SignOrbs chain={liveCert.chain} awaitingCode={liveCert.awaiting_stage.code} />
+            <span className="dock-text">
+              <b>
+                {liveCert.my_turn ? "Your turn" : "As administrator"}: sign as “{liveCert.awaiting_stage.signature_title}
+                {liveCert.awaiting_stage.holder_title ? ` (${liveCert.awaiting_stage.holder_title})` : ""}”
+              </b>
+              <br />
+              {liveCert.awaiting_stage.order === liveCert.stages.length
+                ? "Yours is the last signature — it releases the certificate."
+                : `Next: ${liveCert.stages.find((s) => s.order === liveCert.awaiting_stage!.order + 1)?.holder ?? "the next stage"}.`}
+            </span>
+          </div>
+          <button className="primary big" onClick={() => navigate(`/samples/${sample.id}/review`)}>✎ Review and sign →</button>
+        </div>
+      )}
 
       {retestFor && (
         <CommentModal

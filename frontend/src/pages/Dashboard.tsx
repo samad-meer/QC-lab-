@@ -163,6 +163,7 @@ export default function Dashboard() {
 
   const shortcuts = [
     can("sample.register") && { to: "/frontdesk", label: "Receive a sample", icon: "inbox" as IconName },
+    can("sample.assign") && { to: "/assign", label: "Assign work", icon: "people" as IconName },
     can("result.enter") && { to: "/worklist", label: "My worklist", icon: "flask" as IconName },
     user.is_reviewer && { to: "/queue", label: "Awaiting my signature", icon: "sign" as IconName },
     can("sample.view.all") && { to: "/samples", label: "All samples", icon: "list" as IconName },

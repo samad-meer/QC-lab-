@@ -79,7 +79,7 @@ export default function AdminMenu({ links }: { links: AdminLink[] }) {
         </svg>
       </button>
       {open && (
-        <div className={`nav-menu-panel ${links.length > 4 ? "two-col" : ""}`} id={panelId}>
+        <div className={`nav-menu-panel ${links.length > 8 ? "three-col" : links.length > 4 ? "two-col" : ""}`} id={panelId}>
           {groups.map((g) => [
             headed && <div key={`h-${g.key}`} className="nav-menu-heading">{GROUP_TITLES[g.key]}</div>,
             ...g.links.map((l) => (

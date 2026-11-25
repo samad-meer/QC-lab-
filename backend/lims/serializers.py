@@ -1,5 +1,7 @@
 from datetime import timedelta
 
+from django.db.models import Count
+
 from rest_framework import serializers
 
 from accounts.authz import OVERRIDE, has_perm
@@ -15,6 +17,7 @@ from .models import (
     TestDefinition,
     TestResult,
     WorkflowEvent,
+    WorkflowVersion,
 )
 
 
@@ -156,6 +159,7 @@ class SampleListSerializer(serializers.ModelSerializer):
     my_turn = serializers.SerializerMethodField()
     can_sign = serializers.SerializerMethodField()
     batch_label = serializers.CharField(read_only=True)
+    journey = serializers.SerializerMethodField()
 
     class Meta:
         model = Sample
@@ -163,7 +167,31 @@ class SampleListSerializer(serializers.ModelSerializer):
             "id", "sample_no", "product_name", "product_code", "section_code",
             "batch_id", "batch_no", "batch_label", "reference", "due_date", "status", "status_label",
             "review_stage_order", "my_turn", "can_sign", "analyst_name", "assigned_analyst_id", "received_at", "has_failures",
+            "journey",
         ]
+
+    def get_journey(self, obj):
+        """
+        How far along the sample is, for a row or a card: the steps it has (received, tested,
+        each review its workflow asks for, printed) and how many are behind it. A rejected or
+        cancelled sample has no journey left to show.
+        """
+        if obj.status in (SampleStatus.REJECTED, SampleStatus.CANCELLED):
+            return None
+        counts = getattr(self, "_review_counts", None)
+        if counts is None:
+            # One small query for every row of the page, not one per sample.
+            counts = self._review_counts = dict(
+                WorkflowVersion.objects.annotate(n=Count("stages")).values_list("id", "n")
+            )
+        total = counts.get(obj.workflow_version_id, 0) + 3
+        if obj.status == SampleStatus.APPROVED:
+            done = total
+        elif obj.status == SampleStatus.IN_REVIEW:
+            done = 1 + (obj.review_stage.order if obj.review_stage_id else 1)
+        else:
+            done = 1
+        return {"done": min(done, total), "total": total}
 
     def get_analyst_name(self, obj):
         return obj.assigned_analyst.display_name()
@@ -205,10 +233,11 @@ class SampleDetailSerializer(SampleListSerializer):
     batch_internal_id = serializers.CharField(source="batch.internal_id", read_only=True, default="")
     manufacturing_site = serializers.CharField(source="batch.manufacturing_site", read_only=True, default="")
     qc_stage_name = serializers.CharField(source="qc_stage.name", read_only=True, default="")
+    qc_stage_id = serializers.IntegerField(read_only=True, allow_null=True)
 
     class Meta(SampleListSerializer.Meta):
         fields = SampleListSerializer.Meta.fields + [
-            "qc_stage_name", "quantity", "received_from", "registered_by_name",
+            "qc_stage_name", "qc_stage_id", "quantity", "received_from", "registered_by_name",
             "manufacturing_date", "expiry_date", "past_expiry_reason", "closed_reason", "closed_at", "closed_by_name",
             "investigations",
             "storage_condition", "batch_internal_id", "manufacturing_site",

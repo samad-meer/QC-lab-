@@ -541,6 +541,8 @@ export interface SampleListItem {
   analyst_name: string;
   received_at: string;
   has_failures: boolean;
+  /** How far along: the steps it has and how many are behind it. Null for a rejected or cancelled sample. */
+  journey: { done: number; total: number } | null;
 }
 
 export interface WorkflowEvent {
@@ -563,6 +565,7 @@ export interface CertificateRef {
 export interface SampleDetail extends SampleListItem {
   /** The batch's QC stage it was taken for; empty when none. */
   qc_stage_name: string;
+  qc_stage_id: number | null;
   quantity: string;
   received_from: string;
   registered_by_name: string;

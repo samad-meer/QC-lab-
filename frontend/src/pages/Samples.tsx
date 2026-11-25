@@ -2,9 +2,12 @@ import { useCallback, useEffect, useState } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router-dom";
 import { apiGet } from "../api";
+import { useAuth } from "../auth";
 import DueChip from "../components/DueChip";
+import BulkAssignModal from "../components/execution/BulkAssignModal";
 import { EmptyState } from "../components/Feedback";
 import LineIcon from "../components/LineIcon";
+import MiniJourney from "../components/MiniJourney";
 import PersonChip from "../components/PersonChip";
 import ListCard from "../components/list/ListCard";
 import SampleFilters, { useSampleFilters } from "../components/SampleFilters";
@@ -30,6 +33,8 @@ const COLUMNS: { key: SampleStatus; title: string; hint: string; color: string }
 ];
 const PER_COLUMN = 12;
 const FINISHED: SampleStatus[] = ["APPROVED", "REJECTED", "CANCELLED"];
+/** Testing can still change hands: received, or being tested and not yet signed. */
+const ASSIGNABLE: SampleStatus[] = ["RECEIVED", "IN_TESTING"];
 
 type View = "list" | "board";
 const VIEW_KEY = "qclab.samples.view";
@@ -58,7 +63,10 @@ function SampleCard({ s }: { s: SampleListItem }) {
         <DueChip due={s.due_date} done={FINISHED.includes(s.status)} />
         {s.has_failures && <span className="badge fail">Failed test</span>}
       </div>
-      {s.status !== "APPROVED" && <div className="sb-card-state">{s.status_label}</div>}
+      <div className="sb-card-journey">
+        <MiniJourney s={s} />
+        {s.status !== "APPROVED" && <span className="sb-card-state">{s.status_label}</span>}
+      </div>
       {s.can_sign && (
         <div className="tk-card-actions">
           <Link to={`/samples/${s.id}/review`} className="btn-link">{s.my_turn ? "Review and sign →" : "Review →"}</Link>
@@ -155,6 +163,12 @@ export default function Samples() {
   const list = useList<SampleListItem>("/api/samples/", { query: { ...filters.query, status } });
   const [summary, setSummary] = useState<Summary | null>(null);
   const [view, setView] = useState<View>(savedView);
+  const { can } = useAuth();
+  // Ticked samples, kept from page to page of the list until they are assigned or cleared.
+  const [picked, setPicked] = useState<Set<number>>(() => new Set());
+  // The samples being assigned, fixed when the dialog opens.
+  const [assigning, setAssigning] = useState<number[] | null>(null);
+  const assigns = can("sample.assign");
 
   useEffect(() => {
     apiGet<Summary>(`/api/summary/?${range.search}`).then(setSummary).catch(() => undefined);
@@ -194,6 +208,7 @@ export default function Samples() {
           <p className="sub">The whole pipeline, newest first. Select a sample to open it.</p>
         </div>
         <div className="page-head-aside">
+          {assigns && <Link to="/assign" className="btn-link"><LineIcon name="people" size={15} /> Assign work</Link>}
           <div className="seg" role="group" aria-label="View">
             <button type="button" className={view === "list" ? "on" : ""} aria-pressed={view === "list"} onClick={() => choose("list")}>
               <LineIcon name="list" size={15} /> List
@@ -237,7 +252,25 @@ export default function Samples() {
           actions={statusButtons}
           filters={<SampleFilters filters={filters} />}
         >
-          {(rows) => <SampleTable samples={rows} />}
+          {(rows) => (
+            <>
+              {assigns && picked.size > 0 && (
+                <div className="bulk-bar" role="region" aria-label="Selected samples">
+                  <b>{picked.size} selected</b>
+                  <button className="primary small" onClick={() => setAssigning([...picked])}>
+                    <LineIcon name="people" size={15} /> Assign testing to…
+                  </button>
+                  <button className="link-btn" onClick={() => setPicked(new Set())}>Clear</button>
+                </div>
+              )}
+              <SampleTable samples={rows} selection={assigns ? {
+                can: (s) => ASSIGNABLE.includes(s.status),
+                selected: picked,
+                onChange: setPicked,
+                why: "Testing is finished: only received samples and those in testing can be assigned.",
+              } : undefined} />
+            </>
+          )}
         </ListCard>
       ) : (
         <>
@@ -264,6 +297,16 @@ export default function Samples() {
             </div>
           )}
         </>
+      )}
+      {assigning && (
+        <BulkAssignModal
+          ids={assigning}
+          onDone={() => {
+            setPicked(new Set());
+            void list.reload();
+          }}
+          onClose={() => setAssigning(null)}
+        />
       )}
     </>
   );

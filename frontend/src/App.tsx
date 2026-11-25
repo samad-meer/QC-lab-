@@ -22,6 +22,7 @@ import Users from "./pages/admin/Users";
 import Workflows from "./pages/admin/Workflows";
 import CertificatePage from "./pages/CertificatePage";
 import Dashboard from "./pages/Dashboard";
+import AssignWork from "./pages/AssignWork";
 import FrontDesk from "./pages/FrontDesk";
 import Login from "./pages/Login";
 import Profile from "./pages/Profile";
@@ -80,6 +81,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to={homeFor(user)} replace />} />
           <Route path="/frontdesk" element={<Guarded need="sample.register"><FrontDesk /></Guarded>} />
+          <Route path="/assign" element={<Guarded need="sample.assign"><AssignWork /></Guarded>} />
           <Route path="/worklist" element={<Guarded need="result.enter"><Worklist /></Guarded>} />
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/queue" element={<Queue />} />

@@ -7,6 +7,7 @@ import { useTheme } from "../theme";
 import type { Summary, Tasks } from "../types";
 import AdminMenu from "./AdminMenu";
 import type { AdminLink } from "./AdminMenu";
+import AccountMenu from "./AccountMenu";
 import Avatar from "./Avatar";
 import BrandMark from "./BrandMark";
 import { Backdrop } from "./Decor";
@@ -16,12 +17,13 @@ import { NotificationBell, POLL_MS, useNotifications } from "./Notifications";
  * How far the top bar has had to give way to keep its menu on one line. Each step
  * gives up a little more, and the steps add up: 1 tighter spacing; 2 your name and
  * role hide behind your picture and Sign out keeps only its icon; 3 the tagline
- * hides and a long lab name is shortened; 4 only the logo stays; 5 smaller menu text.
+ * hides and a long lab name is shortened; 4 smaller menu text. The lab's name never
+ * goes: it is who the bar belongs to.
  * When even that is not enough, the menu takes a row of its own.
  * Measured, not guessed from the width: what the bar holds depends on the role, the
  * lab's name and the zoom.
  */
-const FIT_STEPS = 5;
+const FIT_STEPS = 4;
 /** Under this width the bar is one compact row and the menu opens from a button (see .topbar in index.css). */
 const COMPACT = 960;
 
@@ -194,7 +196,7 @@ export default function Layout({ children }: { children: ReactNode }) {
     <div className="app-shell">
       <a className="skip-link" href="#main">Skip to content</a>
       <header className={`topbar${menuOpen ? " menu-open" : ""}`} ref={bar}>
-        <Link to="/dashboard" className="brand" title="Open the dashboard">
+        <Link to="/dashboard" className="brand" title={`${titles.lab_name} — open the dashboard`}>
           <BrandMark />
           <div className="brand-text">
             <b>{titles.lab_name}</b>
@@ -208,6 +210,7 @@ export default function Layout({ children }: { children: ReactNode }) {
             {tasks > 0 && <span className="nav-count">{tasks}</span>}
           </NavLink>
           {can("sample.register") && <NavLink to="/frontdesk">Receive samples</NavLink>}
+          {can("sample.assign") && <NavLink to="/assign">Assign work</NavLink>}
           {/* An administrator works from All samples; this is theirs only once something is assigned to them. */}
           {can("result.enter") && (!can("admin.override") || waiting > 0) && (
             <NavLink to="/worklist">
@@ -240,33 +243,20 @@ export default function Layout({ children }: { children: ReactNode }) {
 
         <div className="topbar-right">
           <NotificationBell />
-          {can("config.manage") && (
-            <NavLink to="/admin/settings" className="icon-btn tool" title="Settings" aria-label="Settings">
-              {SETTINGS_ICON}
-            </NavLink>
-          )}
-          <button
-            className="icon-btn tool"
-            onClick={toggle}
-            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            title={theme === "dark" ? "Light theme" : "Dark theme"}
-          >
-            {theme === "dark" ? "☀" : "☾"}
-          </button>
-          <Link to="/profile" className="identity" title="My account">
+          {/* On a computer, you are one menu: account, settings, theme, Sign out. */}
+          <AccountMenu
+            name={user.name}
+            role={user.designation || user.role?.name || "No role"}
+            photoUrl={user.photo_url}
+            theme={theme}
+            onTheme={toggle}
+            onSignOut={() => void logout()}
+            settingsIcon={can("config.manage") ? SETTINGS_ICON : undefined}
+          />
+          {/* On a phone the picture opens My account, and the rest waits in the menu. */}
+          <Link to="/profile" className="identity compact-only" title="My account">
             <Avatar name={user.name} photoUrl={user.photo_url} />
-            <div className="who">
-              <b>{user.name}</b>
-              <span>{user.designation || user.role?.name || "No role"}</span>
-            </div>
           </Link>
-          <button className="signout tool" title="Sign out" onClick={() => void logout()}>
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9"
-                fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-            Sign out
-          </button>
           <button type="button" ref={toggleButton} className="icon-btn menu-toggle" aria-label={menuOpen ? "Close the menu" : "Open the menu"}
             aria-expanded={menuOpen} aria-controls="main-menu" onClick={() => setMenuOpen((o) => !o)}>
             <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
