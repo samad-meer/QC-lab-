@@ -148,19 +148,9 @@ export const LAB_REGISTER_VIEWS: Permission[] = [
 ];
 
 /**
- * Where a user lands after login — derived from what they may do, so a
- * lab-invented role goes somewhere sensible without a code change.
+ * Where everyone lands: after signing in, after a first password is chosen, and when an address
+ * is "/" or unknown or a page their role may not open. The dashboard, for every role: it shows
+ * what is waiting on that person, whatever they are, and links on to the rest. A role the lab
+ * invents needs no code change here.
  */
-export function homeFor(user: User): string {
-  const p = user.permissions ?? [];
-  if (p.includes("admin.override")) return "/samples"; // holds every other key too
-  if (p.includes("sample.register")) return "/frontdesk";
-  if (p.includes("result.enter")) return "/worklist";
-  if (user.is_reviewer) return "/queue";
-  if (p.includes("user.manage") || p.includes("role.manage")) return "/admin/users";
-  if (p.includes("sample.view.all")) return "/samples";
-  if (p.includes("audit.view")) return "/admin/audit";
-  // Production fills batch records: their work starts from the batches.
-  if (p.includes("batch.view.all")) return "/batches";
-  return "/samples";
-}
+export const HOME_PATH = "/dashboard";

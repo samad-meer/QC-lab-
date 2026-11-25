@@ -4,6 +4,7 @@ import { apiGet } from "../../api";
 import { useAuth } from "../../auth";
 import { BarList } from "../../components/Charts";
 import { Message, TableSkeleton } from "../../components/Feedback";
+import LabGlance from "../../components/LabGlance";
 import DateRangeFilter from "../../components/list/DateRangeFilter";
 import { TimelineChart } from "../../components/reports/LineCharts";
 import type { ReportCatalogue, ReportDashboard, ReportTile } from "../../types";
@@ -90,6 +91,8 @@ export default function ReportsHome() {
           <div className="actions-bar" style={{ marginBottom: 14 }}>
             <DateRangeFilter range={range} />
           </div>
+
+          <LabGlance data={data} />
 
           <section className="card" aria-label="In this period">
             <div className="card-head">

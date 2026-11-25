@@ -1,5 +1,7 @@
 import { Link } from "react-router-dom";
 import type { InsightDelta, InsightTile } from "../types";
+import LineIcon from "./LineIcon";
+import type { IconName } from "./LineIcon";
 
 /**
  * The headline figures, each with how it moved against the period before and a small trend of its own.
@@ -12,9 +14,14 @@ const HEIGHT = 36;
 const PAD = 4;
 
 /** A line of values over the period, one value to a day, week or month. A gap in the data is a gap in the line. */
-export function Sparkline({ values, tone, zero = false }: { values: (number | null)[]; tone: string; zero?: boolean }) {
+export function Sparkline({ values, tone, zero = false, className = "kpi-spark" }: {
+  values: (number | null)[];
+  tone: string;
+  zero?: boolean;
+  className?: string;
+}) {
   const known = values.filter((v): v is number => v !== null);
-  if (known.length < 2) return <svg className="kpi-spark" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} aria-hidden="true" />;
+  if (known.length < 2) return <svg className={className} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} aria-hidden="true" />;
   // Counts start from nothing, so a quiet week looks quiet; a rate or an average is drawn between its own extremes.
   const low = zero ? Math.min(0, ...known) : Math.min(...known);
   const high = Math.max(...known);
@@ -33,7 +40,7 @@ export function Sparkline({ values, tone, zero = false }: { values: (number | nu
   const lastIndex = values.reduce<number>((at, v, i) => (v === null ? at : i), -1);
 
   return (
-    <svg className="kpi-spark" viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" aria-hidden="true">
+    <svg className={className} viewBox={`0 0 ${WIDTH} ${HEIGHT}`} preserveAspectRatio="none" aria-hidden="true">
       {drawn.map((run, n) => run.length > 1 && (
         <polygon key={`a${n}`} points={[
           `${x(run[0].i)},${HEIGHT - PAD}`, ...run.map((p) => `${x(p.i)},${y(p.v)}`), `${x(run[run.length - 1].i)},${HEIGHT - PAD}`,
@@ -79,13 +86,25 @@ function Change({ tile, compare }: { tile: InsightTile; compare: string }) {
   );
 }
 
+/** How each headline figure is dressed: volumes are blue, how well and how fast are orange, what is late is red. */
+const LOOK: Record<string, { tone: string; icon: IconName }> = {
+  received: { tone: "blue", icon: "inbox" },
+  completed: { tone: "blue", icon: "box" },
+  pass_rate: { tone: "orange", icon: "flask" },
+  turnaround: { tone: "orange", icon: "clock" },
+  on_time: { tone: "orange", icon: "check" },
+  overdue: { tone: "red", icon: "alert" },
+};
+
 export default function KpiStrip({ tiles, compare }: { tiles: InsightTile[]; compare: string | null }) {
   return (
     <div className="kpi-strip">
       {tiles.map((t) => {
-        const tone = t.alert ? "var(--fail)" : "var(--chart-1)";
+        const look = LOOK[t.key] ?? { tone: "blue", icon: "chart" as IconName };
+        const tone = t.alert ? "var(--fail)" : look.tone === "orange" ? "var(--chart-2)" : "var(--chart-4)";
         return (
-          <Link key={t.key} to={t.to} className={`kpi${t.alert ? " alert" : ""}`}>
+          <Link key={t.key} to={t.to} className={`kpi ${look.tone}${t.alert ? " alert" : ""}`}>
+            <span className="kpi-icon"><LineIcon name={look.icon} size={20} /></span>
             <span className="kpi-label">{t.label}</span>
             <b className="kpi-value">{t.display}</b>
             {t.delta && compare ? <Change tile={t} compare={compare} /> : <span className="kpi-delta flat">{t.sub && !t.spark ? t.sub : " "}</span>}

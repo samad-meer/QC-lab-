@@ -63,8 +63,29 @@ Backend — **port 8007**:
 ```powershell
 .venv\Scripts\python.exe manage.py seed_demo      # demo users + products
 .venv\Scripts\python.exe manage.py seed_floxcip   # optional: Floxcip 500 mg, batch 26FB017
+.venv\Scripts\python.exe manage.py seed_dashboard # optional: three weeks of lab work, for the dashboard
+.venv\Scripts\python.exe manage.py seed_production # optional: a batch record and four production batches
 .venv\Scripts\python.exe manage.py runserver      # defaults to 8007
 ```
+
+`seed_dashboard` enters three weeks of lab work, so the dashboard's figures and charts
+have something in them: 21 samples of Paracetamol, Vitamin C and Ibuprofen at every
+stage (just received, being tested, waiting for review or approval, released), three
+failed results with an investigation open, one awaiting closure and one closed, and the
+quality unit's decisions on their batches (`DM-…`): three released, one quarantined, one
+rejected. `seed_production` enters the production side: Metformin 500 mg Tablets with a
+three-stage batch record (dispensing, granulation and drying, compression) and four
+batches at different points in it, one of them assigned to the operator and not yet
+written, so production's screens have work too.
+
+Both go through the same API as the screens, signed by the demo accounts, so every rule,
+password signature and audit entry applies. They are the only seeders that date their
+records in the past: each step runs on a clock that moves from three weeks ago to now, in
+the order the work would have happened, so a trend has more than one day in it and the
+audit trail still reads in order. Nothing is edited afterwards. Run `seed_demo` first;
+add `--dry-run` to see them work and roll back. Each runs once and refuses if its records
+are already there, and like the others they never run outside `DEBUG`. The records they
+make are kept, as every record in QC Lab is, so to start without them use a fresh database.
 
 `seed_floxcip` enters batch 26FB017 of Floxcip 500 mg Tablets as it was written on
 its paper record: the product and its specification, the twelve QC stages with every
@@ -436,8 +457,27 @@ Summary and Product Quality History are about one thing, so they are documents
   stretch of the period before (this month so far against the same days of last
   month) and with a small trend of its own: samples received and completed, the
   test pass rate, the average turnaround, the share released by their due date,
-  and what is overdue now. Below them, four views:
-  *Overview*: received against completed over time, passed and failed results
+  and what is overdue now, each on a card with a coloured header and an icon.
+  Below them, five views. *Scorecard*, which opens first: dials for the pass rate
+  and the share released on time, a table by product (or by analyst, for whoever
+  may plan the work) with a light and a trend on every row, the failure rate by
+  section with a figure on every column, the products slowest to release, and the
+  limits the lab stays within: open samples and investigations inside their due
+  dates, instruments in calibration, standards and reagents in date, each a share
+  with the ones outside it a click away; and a pie of the samples received by
+  product, passed and failed results by product, and the samples received per day
+  or week, each with its figures on it. A month with nothing in it yet opens on
+  the last 90 days instead, and says so. The colours of the dials and lights (green
+  from 95% passed, amber from 85%; 90% and 75% for release on time) are a reading
+  guide set in `reports/insights.py`, not a commitment the lab has made: what the
+  lab promises is each sample's own due date, which the limits count. A light is
+  also a shape (circle, diamond, triangle) and is read aloud.
+  *Pie charts*: numbered pies for where the samples stand, the test results
+  (passed, failed, reported with no limit), the samples by kind of material and by
+  product, the investigations by kind and by where they stand, the batch decisions,
+  the failed results by test, and the instruments by calibration; each slice shows
+  its share, and each legend row opens the records it counts.
+  *Trends*: received against completed over time, passed and failed results
   over time, and donuts for the samples in the lab by due date, the results, and
   the samples by section. *Workload*: what falls due over the next two weeks (a
   column for each day, what is already late standing apart), how long the samples
@@ -451,7 +491,8 @@ Summary and Product Quality History are about one thing, so they are documents
   views are left out for anyone who may not see them. A chart with nothing to show
   says so instead of drawing empty. Every chart has its values in a table under it
   and answers the keyboard. The analyst bars are for planning, not for ranking
-  people.
+  people. The same view tops the Reports page, driven by that page's own date
+  filter, so it can be asked about any dates.
 - **Three failures, counted apart.** A failed test is one result. A sample with
   a failed test is not a failed sample decision. A batch disposition is a
   release decision, which this system does not record, and a released
