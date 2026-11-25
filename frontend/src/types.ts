@@ -1580,7 +1580,53 @@ export interface ReportDashboard extends ReportStamp {
     status: { label: string; value: number; to?: string }[];
     sections: { label: string; value: number; to?: string }[];
     analysts?: { label: string; pending: number; overdue: number; to?: string }[];
+    /** Passed against failed, over the results entered in the period. */
+    results: { passed: number; failed: number; to_passed?: string; to_failed?: string };
+    /** Samples still in the lab, by how near their due date is. */
+    due: { key: string; label: string; value: number; to?: string }[];
+    /** Quality events now, and those closed in the period. */
+    investigations: { key: string; label: string; value: number; to?: string }[];
+    /** Batches registered in the period, by the quality unit's decision. Absent for someone who sees no batches. */
+    batches?: { key: string; label: string; value: number }[];
   };
+  insights: DashboardInsights;
+}
+
+/** How a figure moved against the period before. `good` says which way is better, if either is. */
+export interface InsightDelta { change: number; percent: number | null; good: "up" | "down" | null }
+
+export interface InsightTile {
+  key: string;
+  label: string;
+  value: number | null;
+  display: string;
+  sub: string;
+  to: string;
+  /** One value per day, week or month of the period. A gap is a stretch with nothing to average. */
+  spark: (number | null)[] | null;
+  delta: InsightDelta | null;
+  alert?: boolean;
+}
+
+export interface FailureRow { label: string; failed: number; total: number; rate: number; to: string }
+export interface EquipmentGroup { title: string; to: string; rows: { key: string; label: string; value: number }[] }
+
+/** The dashboard's deeper views. Every figure opens the records it counts. */
+export interface DashboardInsights {
+  compare: string | null;
+  tiles: InsightTile[];
+  turnaround: { bands: { label: string; value: number }[]; mean: number | null; on_time: number; late: number; to: string };
+  outlook: {
+    overdue: { value: number; to: string };
+    days: { date: string; value: number; to: string }[];
+    later: { value: number; to: string };
+  };
+  ageing: {
+    bands: { key: string; label: string }[];
+    stages: { key: string; label: string; values: number[]; links: string[] }[];
+  };
+  failures: { tests: FailureRow[]; products: FailureRow[] };
+  equipment?: { instruments?: EquipmentGroup; materials?: EquipmentGroup };
 }
 
 export interface ReportTrend {

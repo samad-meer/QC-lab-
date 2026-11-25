@@ -2,7 +2,11 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet, apiPoll } from "../api";
 import { LAB_REGISTER_VIEWS, useAuth } from "../auth";
+import { DonutChart } from "../components/Charts";
+import type { DonutSlice } from "../components/Charts";
 import { Message } from "../components/Feedback";
+import LabGlance from "../components/LabGlance";
+import type { GlancePeriod } from "../components/LabGlance";
 import LineIcon from "../components/LineIcon";
 import type { IconName } from "../components/LineIcon";
 import { NotificationList, useNotifications } from "../components/Notifications";
@@ -90,6 +94,9 @@ export default function Dashboard() {
   const [batches, setBatches] = useState<BatchRow[] | null | undefined>(undefined);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => new Date());
+  const [period, setPeriod] = useState<GlancePeriod>("month");
+  // Another period has been asked for and its figures have not come yet.
+  const [glanceBusy, setGlanceBusy] = useState(false);
 
   const fills = can("batch.record.fill");
   // Production fills batch records and never works on samples: sample counts would all read 0.
@@ -109,15 +116,12 @@ export default function Dashboard() {
     }
     // The extras never block the page: each shows when it arrives, or not at all.
     // A failed refresh keeps what was shown; a failed first load lets the placeholder go.
-    if (overview) {
-      get<ReportDashboard>("/api/reports/dashboard/?period=month").then(setMonth).catch(() => setMonth((m) => m ?? null));
-    }
     if (seesBatches) {
       get<Page<BatchRow>>("/api/batches/?page_size=5")
         .then((p) => setBatches(p.results))
         .catch(() => setBatches((b) => b ?? null));
     }
-  }, [overview, seesBatches]);
+  }, [seesBatches]);
 
   useEffect(() => {
     void load();
@@ -128,6 +132,25 @@ export default function Dashboard() {
       window.clearInterval(tick);
     };
   }, [load]);
+
+  // What the charts show depends on the period chosen, so they load and refresh on their own: picking
+  // another period must not reload the tasks too, and the chosen period's answer must be the one shown.
+  useEffect(() => {
+    if (!overview) return undefined;
+    let current = true;
+    const fetchGlance = (quietly: boolean) => {
+      const get = quietly ? apiPoll : apiGet;
+      get<ReportDashboard>(`/api/reports/dashboard/?period=${period}`)
+        .then((d) => { if (current) { setMonth(d); setGlanceBusy(false); } })
+        .catch(() => { if (current) { setMonth((m) => m ?? null); setGlanceBusy(false); } });
+    };
+    fetchGlance(false);
+    const refresh = window.setInterval(() => fetchGlance(true), REFRESH_MS);
+    return () => {
+      current = false;
+      window.clearInterval(refresh);
+    };
+  }, [overview, period]);
 
   if (!user) return null;
   const first = firstName(user.name);
@@ -151,6 +174,12 @@ export default function Dashboard() {
   ].filter((x): x is { to: string; label: string; icon: IconName } => Boolean(x));
 
   const inProgress = summary ? STAGES.reduce((sum, st) => sum + (summary.by_status[st.key] ?? 0), 0) : 0;
+  const inProgressSlices: DonutSlice[] = summary
+    ? STAGES.map((st) => ({
+      label: st.label, value: summary.by_status[st.key] ?? 0, color: st.color,
+      to: can("sample.view.all") ? `/samples?status=${st.key}` : "/tasks",
+    }))
+    : [];
 
   return (
     <>
@@ -233,6 +262,9 @@ export default function Dashboard() {
         </div>
       </section>
 
+      {overview && month === undefined && <LoadingCard title="Lab at a glance" chart />}
+      {overview && month && <LabGlance data={month} period={period} busy={glanceBusy} onPeriod={(next) => { setGlanceBusy(true); setPeriod(next); }} />}
+
       <div className="dash2-grid">
         <div className="dash2-col">
           {fills && batchWork.length > 0 && (
@@ -261,11 +293,11 @@ export default function Dashboard() {
             </section>
           )}
 
-          {overview && month === undefined && <LoadingCard title="This month in the lab" chart />}
+          {overview && month === undefined && <LoadingCard title="In the lab" chart />}
           {overview && month && (
             <section className="card" aria-label="This month">
               <div className="card-head">
-                <h2>This month in the lab</h2>
+                <h2>{month.label} in the lab</h2>
                 <span className="hint">{month.label} · {month.scope}</span>
                 <div className="spacer" />
                 <Link to="/reports" className="btn-link">Reports →</Link>
@@ -363,22 +395,9 @@ export default function Dashboard() {
                   <div className="dash2-pipe sk" />
                 ) : (
                   <>
-                    <div className="dash2-pipe" role="img"
-                      aria-label={STAGES.map((st) => `${summary.by_status[st.key] ?? 0} ${st.label.toLowerCase()}`).join(", ")}>
-                      {inProgress === 0 ? <span className="dash2-pipe-empty" /> : STAGES.map((st) => {
-                        const n = summary.by_status[st.key] ?? 0;
-                        return n > 0 && (
-                          <span key={st.key} style={{ flexGrow: n, background: st.color }} title={`${st.label}: ${n}`} />
-                        );
-                      })}
-                    </div>
+                    <DonutChart name="Samples in progress" slices={inProgressSlices} centerValue={inProgress} centerLabel="in progress"
+                      emptyText="Nothing is in progress." />
                     <div className="dash2-stats">
-                      {STAGES.map((st) => (
-                        <Link key={st.key} to={can("sample.view.all") ? `/samples?status=${st.key}` : "/tasks"} className="dash-stat">
-                          <b>{summary.by_status[st.key] ?? 0}</b>
-                          <span><i style={{ background: st.color }} />{st.label}</span>
-                        </Link>
-                      ))}
                       <Link to={can("sample.view.all") ? "/samples?status=APPROVED" : "/tasks"} className="dash-stat">
                         <b>{summary.by_status.APPROVED ?? 0}</b>
                         <span><i style={{ background: "var(--pass)" }} />Approved</span>

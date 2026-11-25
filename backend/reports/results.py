@@ -27,12 +27,21 @@ from .records import (
     review_signatures,
     section_options,
     spec_options,
+    test_name_options,
     with_unit,
 )
 
 
 def _sample_cell(sample) -> Cell:
     return Cell(sample.sample_no, to=f"/reports/sample-history/{sample.pk}")
+
+
+# Passed and failed together: what a pass rate is a share of. A result reported only as "<LOQ" or "ND" is neither.
+JUDGED = "JUDGED"
+
+
+def _by_outcome(qs, value):
+    return qs.exclude(outcome=Outcome.REPORTED) if value == JUDGED else qs.filter(outcome=value)
 
 
 @register
@@ -65,12 +74,14 @@ class ResultsRegister(Report):
     filters = [
         Filter("product", "Product", lambda qs, v: qs.filter(sample__product_id=v), options=product_options),
         Filter("test", "Test", lambda qs, v: qs.filter(test_definition__name__icontains=v), kind="text"),
+        Filter("test_name", "Test, exact name", lambda qs, v: qs.filter(test_definition__name=v),
+               options=test_name_options),
         Filter("batch", "Batch / Lot", lambda qs, v: qs.filter(
             Q(sample__batch_no__icontains=v) | Q(sample__reference__icontains=v)
         ), kind="text"),
         Filter("analyst", "Analyst", lambda qs, v: qs.filter(entered_by_id=v), options=analyst_options),
-        Filter("outcome", "Result status", lambda qs, v: qs.filter(outcome=v),
-               options=[(o.value, o.label) for o in Outcome]),
+        Filter("outcome", "Result status", lambda qs, v: _by_outcome(qs, v),
+               options=[(o.value, o.label) for o in Outcome] + [(JUDGED, "Passed or failed")]),
         Filter("spec", "Specification", lambda qs, v: qs.filter(sample__specification_id=v), options=spec_options),
         Filter("current", "Current results only", lambda qs, v: qs, kind="toggle"),
     ]

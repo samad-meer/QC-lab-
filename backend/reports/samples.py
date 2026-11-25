@@ -3,15 +3,18 @@ from django.db.models import Q
 from django.utils import timezone
 
 from execution.models import SampleHold
-from lims.models import SampleStatus
+from lims.models import FINISHED, SampleStatus
 from .engine import Cell, Column, Dates, Filter, Report, register
+from .insights import AGE_BANDS, in_age_band
 from .records import (
+    DUE_BANDS,
     POSITIONS,
     SAMPLE_TYPES,
     analyst_options,
     days_between,
     mean,
     median,
+    open_due,
     overdue,
     visible_samples,
     product_options,
@@ -20,7 +23,6 @@ from .records import (
     section_options,
     tests_required,
     turnaround_of,
-    visible_samples,
 )
 
 
@@ -109,6 +111,10 @@ class SampleRegister(Report):
         Filter("status", "Status", lambda qs, v: qs.filter(status=v),
                options=[(s.value, s.label) for s in SampleStatus]),
         Filter("overdue", "Only overdue", lambda qs, v: overdue(qs), kind="toggle"),
+        Filter("due", "Open samples due", lambda qs, v: open_due(qs, v), options=list(DUE_BANDS.items())),
+        Filter("open", "Only samples still in the lab", lambda qs, v: qs.exclude(status__in=FINISHED), kind="toggle"),
+        Filter("age", "Days in the lab", lambda qs, v: in_age_band(qs, v),
+               options=[(k, label) for k, (label, _, _) in AGE_BANDS.items()]),
         Filter("investigate", "Only requiring investigation", lambda qs, v: qs.filter(open_failure=True), kind="toggle"),
     ]
 

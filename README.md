@@ -239,7 +239,8 @@ they were registered under).
   yourself a test.
 - **Dashboard** (`/dashboard`, opened by clicking the system name): what is
   waiting on you, your notifications, where the samples you can see stand,
-  and shortcuts for your role.
+  the lab at a glance in a few charts (see Reports below), and shortcuts for
+  your role.
 
 Every record carries the person and a server-side timestamp, shown to the
 second. New permissions: `sample.assign`, `sample.hold`,
@@ -391,12 +392,16 @@ with the raw action code, the record it touched, and the address it came from.
 Filter by period, person, record or action; or show only refusals and
 corrections — the rows an inspector goes looking for.
 
-Charts are deliberately **single-hue**: bar length carries the magnitude, so
+The bar charts are deliberately **single-hue**: bar length carries the magnitude, so
 colour never has to be told apart, and pass/fail is always a labelled badge
 rather than a colour. The blue was checked for ≥3:1 contrast on both the light
 and dark card surfaces. The two line charts on the Reports dashboard need a second
 colour: `--chart-1` and `--chart-2` were validated together for colour blindness
 and contrast in both themes, and each line also has a legend entry and an end label.
+The donut charts on the dashboard need several colours, so they never lean on them:
+every slice is named in a legend beside the ring with its count and its share, and a
+colour keeps one meaning across charts (red is late or failed, amber is near or
+waiting, green is done).
 
 ## Reports (`backend/reports/`)
 
@@ -424,7 +429,29 @@ Summary and Product Quality History are about one thing, so they are documents
   reads through `samples_visible_to`, and a filter can only narrow it. An analyst
   without `sample.view.all` gets their own samples throughout.
 - **A number opens its records.** Every tile on the dashboard is a link to the
-  list behind it, and that list has the same count.
+  list behind it, and that list has the same count. So is every slice of the
+  donut charts below, and each has a test that opens the slice and compares.
+- **Lab at a glance** (the dashboard, with a period picker: this and last week,
+  this and last month, last 90 days). Six headline figures, each beside the same
+  stretch of the period before (this month so far against the same days of last
+  month) and with a small trend of its own: samples received and completed, the
+  test pass rate, the average turnaround, the share released by their due date,
+  and what is overdue now. Below them, four views:
+  *Overview*: received against completed over time, passed and failed results
+  over time, and donuts for the samples in the lab by due date, the results, and
+  the samples by section. *Workload*: what falls due over the next two weeks (a
+  column for each day, what is already late standing apart), how long the samples
+  in the lab have waited at each stage, how long release took with the share that
+  made its due date, and the open work each analyst holds. *Quality*: which tests
+  and which products the failures come from, against everything entered for each,
+  and the investigations and batch decisions. *Equipment*: the instruments by when
+  their calibration runs out, and the standards and reagents by expiry. It is the
+  same data as the reports, read through the same visibility rules: an analyst
+  sees their own samples, and the batch donut, the analyst bars and the equipment
+  views are left out for anyone who may not see them. A chart with nothing to show
+  says so instead of drawing empty. Every chart has its values in a table under it
+  and answers the keyboard. The analyst bars are for planning, not for ranking
+  people.
 - **Three failures, counted apart.** A failed test is one result. A sample with
   a failed test is not a failed sample decision. A batch disposition is a
   release decision, which this system does not record, and a released

@@ -57,5 +57,6 @@ Automated tests are supporting evidence. The OQ step is the validation evidence.
 | Q5 | `reports/test_team_reports.py` (Person Activity), `reports/test_report_permissions.py` | 56, 57 |
 | Q6 | `reports/test_team_reports.py` (open work, batch stages) | 58 |
 | Q7 | `qclab/tests.py` (last week and last month) | 59 |
+| Q8 | `reports/test_dashboard_charts.py`, `reports/tests.py` (DashboardTests) | 62 |
 | U1 | None: checked in a browser at several widths | 60 |
 | U2 | `notifications/test_worker.py`, `notifications/tests.py`, `notifications/test_lab_alerts.py` | 61 |
