@@ -2,10 +2,12 @@
 The one way lists work (qclab/listing.py), tested through the real endpoints:
 date windows, which end of a range is included, refused input, and paging.
 """
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
+from unittest.mock import patch
 
 from django.utils import timezone
 
+from qclab.listing import period_window
 from qclab.testing import force_update
 from accounts.models import User
 from audit.models import AuditEvent
@@ -67,6 +69,33 @@ class DateRangeTests(ListTestBase):
         for period in ("today", "week", "month", "quarter"):
             self.assertEqual(self.listed(f"period={period}"), [], period)
         self.assertEqual(self.listed("period=all"), [self.sample.id])
+
+    def test_last_week_and_last_month_are_the_ones_that_have_ended(self):
+        # Wednesday 25 November 2026, 10:00 in the lab: this week began Monday the 23rd.
+        wednesday = timezone.make_aware(datetime(2026, 11, 25, 10, 0))
+        with patch("django.utils.timezone.now", return_value=wednesday):
+            week = period_window("lastweek")
+            month = period_window("lastmonth")
+        self.assertEqual((week.label, month.label), ("Last week", "Last month"))
+        self.assertEqual(timezone.localtime(week.start).date(), date(2026, 11, 16))
+        self.assertEqual(timezone.localtime(week.stop).date(), date(2026, 11, 23), "up to this Monday, not into it")
+        self.assertEqual(timezone.localtime(month.start).date(), date(2026, 10, 1))
+        self.assertEqual(timezone.localtime(month.stop).date(), date(2026, 11, 1))
+        # January looks back into the year before.
+        january = timezone.make_aware(datetime(2027, 1, 5, 9, 0))
+        with patch("django.utils.timezone.now", return_value=january):
+            last = period_window("lastmonth")
+        self.assertEqual((timezone.localtime(last.start).date(), timezone.localtime(last.stop).date()),
+                         (date(2026, 12, 1), date(2027, 1, 1)))
+
+    def test_something_from_last_week_is_in_last_week_and_not_this_one(self):
+        now = timezone.localtime()
+        this_monday = (now - timedelta(days=now.weekday())).replace(hour=12, minute=0)
+        self.received_on(self.sample, this_monday - timedelta(days=3))
+        self.assertEqual(self.listed("period=lastweek"), [self.sample.id])
+        self.assertEqual(self.listed("period=week"), [])
+        self.received_on(self.sample, this_monday + timedelta(minutes=1))
+        self.assertEqual(self.listed("period=lastweek"), [])
 
     def test_a_list_can_filter_on_the_due_date_instead(self):
         Sample.objects.filter(pk=self.sample.pk).update(due_date="2026-04-20")

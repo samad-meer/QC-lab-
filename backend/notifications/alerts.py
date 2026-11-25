@@ -4,8 +4,8 @@ and samples, calibrations and qualifications coming due.
 
 Due dates pass on their own, with no action to hang a notification on, so they
 are swept for. A scheduled `manage.py send_due_alerts` does it; and so that a
-lab with no scheduler still gets them, so does the first notification check of
-each hour.
+lab with no scheduler still gets them, so does the background worker, which
+sweeps once an hour (see worker.py).
 """
 import logging
 from datetime import timedelta
@@ -162,7 +162,7 @@ def send_due_alerts(today=None) -> int:
 
 
 def flush_email():
-    """Called on every notification check, so email goes out without a scheduler."""
+    """Called every round by the background worker, so email goes out without a scheduler."""
     try:
         send_queued()
     except Exception:  # a mail problem must never take the bell down with it
@@ -170,7 +170,7 @@ def flush_email():
 
 
 def sweep_if_due():
-    """Called on every notification check; does its work at most once an hour, across all users."""
+    """Called every round by the background worker; does its work at most once an hour, however many call it."""
     now = timezone.now()
     AlertSweep.objects.get_or_create(pk=1, defaults={"last_run": now - 2 * SWEEP_EVERY})
     if not AlertSweep.objects.filter(pk=1, last_run__lte=now - SWEEP_EVERY).update(last_run=now):

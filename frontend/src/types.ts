@@ -67,6 +67,9 @@ export type ReportKey =
   | "overdue"
   | "analyst-workload"
   | "bottlenecks"
+  | "tasks-by-person"
+  | "team-tasks"
+  | "person-activity"
   | "audit-trail"
   | "document-control"
   | "deviations";
@@ -257,7 +260,7 @@ export interface Page<T> {
   pages: number;
 }
 
-export type PeriodKey = "today" | "week" | "month" | "quarter" | "all";
+export type PeriodKey = "today" | "week" | "lastweek" | "month" | "lastmonth" | "quarter" | "all";
 
 /** How an event is shown: drives the icon and colour of its marker. */
 export type Severity = "signature" | "refused" | "attention" | "admin" | "normal" | "quiet";
@@ -538,6 +541,8 @@ export interface SampleListItem {
   analyst_name: string;
   received_at: string;
   has_failures: boolean;
+  /** How far along: the steps it has and how many are behind it. Null for a rejected or cancelled sample. */
+  journey: { done: number; total: number } | null;
 }
 
 export interface WorkflowEvent {
@@ -560,6 +565,7 @@ export interface CertificateRef {
 export interface SampleDetail extends SampleListItem {
   /** The batch's QC stage it was taken for; empty when none. */
   qc_stage_name: string;
+  qc_stage_id: number | null;
   quantity: string;
   received_from: string;
   registered_by_name: string;
@@ -1229,7 +1235,8 @@ export interface SpecSummary {
   tests: { name: string; method: string; limit_text: string }[];
 }
 
-export type CheckpointKind = "NUMBER" | "PERCENT" | "TIME_RANGE" | "TIME" | "DATE" | "TEXT" | "YES_NO" | "CHOICE";
+export type CheckpointKind =
+  | "NUMBER" | "PERCENT" | "TIME_RANGE" | "TIME" | "DATE" | "TEXT" | "YES_NO" | "CHOICE" | "FILE";
 
 /** One option of a choice, and whether it is an acceptable answer. */
 export interface ChoiceOption {
@@ -1249,6 +1256,27 @@ export interface CheckpointPreset {
   decimals: number;
   choices: ChoiceOption[];
   is_active: boolean;
+}
+
+/**
+ * A kind of value the products' current stages already ask for: the check points
+ * that share a kind, unit, limits and options, with their names and where they are.
+ */
+export interface CheckpointInUse {
+  kind: CheckpointKind;
+  kind_label: string;
+  /** The lab's kinds they were made from, if any. */
+  kind_names: string[];
+  unit: string;
+  min_value: string | null;
+  max_value: string | null;
+  decimals: number;
+  choices: ChoiceOption[];
+  /** Each distinct check point name, in stage order. */
+  labels: string[];
+  /** How many check points share this kind of value. */
+  uses: number;
+  used_in: { product_id: number; product: string; stage: string }[];
 }
 
 /** One value a step asks for: a weight in kg, LOD as a percentage between limits, a start and end time. */
@@ -1291,6 +1319,15 @@ export interface QcSignoffDef {
 }
 
 /** A value written on a batch's record. The latest counts; the ones before it stay. */
+/** A photo or file on a batch record: where to fetch it, and whether it shows as a picture. */
+export interface RecordFile {
+  url: string;
+  name: string;
+  type: string;
+  size: number;
+  image: boolean;
+}
+
 export interface RecordEntry {
   id: number;
   number: string | null;
@@ -1301,6 +1338,8 @@ export interface RecordEntry {
   yes_no: boolean | null;
   /** As the record shows it: "17.887 kg", "17-Nov-2026 10:10 AM – 17-Nov-2026 10:30 AM". */
   shown: string;
+  /** The photo or file kept on the record, for a check point of that kind. */
+  file: RecordFile | null;
   out_of_limit: boolean;
   reason: string;
   correction: string;
@@ -1472,6 +1511,8 @@ export interface ReportFilter {
   label: string;
   kind: "select" | "text" | "toggle";
   options: { value: string; label: string }[];
+  /** What choosing nothing means, when it is not "All": a report about one person says "Me". */
+  blank?: string;
 }
 
 export interface ReportDefinition {
@@ -1501,6 +1542,8 @@ export interface ReportStamp {
 export interface ReportExtra extends ReportStamp {
   summary: { label: string; value: string | number; sub?: string; alert?: boolean }[];
   period: string;
+  /** Whom a report about one person is about. */
+  subject?: string;
 }
 
 export interface ReportCatalogue {
@@ -1540,7 +1583,53 @@ export interface ReportDashboard extends ReportStamp {
     status: { label: string; value: number; to?: string }[];
     sections: { label: string; value: number; to?: string }[];
     analysts?: { label: string; pending: number; overdue: number; to?: string }[];
+    /** Passed against failed, over the results entered in the period. */
+    results: { passed: number; failed: number; to_passed?: string; to_failed?: string };
+    /** Samples still in the lab, by how near their due date is. */
+    due: { key: string; label: string; value: number; to?: string }[];
+    /** Quality events now, and those closed in the period. */
+    investigations: { key: string; label: string; value: number; to?: string }[];
+    /** Batches registered in the period, by the quality unit's decision. Absent for someone who sees no batches. */
+    batches?: { key: string; label: string; value: number }[];
   };
+  insights: DashboardInsights;
+}
+
+/** How a figure moved against the period before. `good` says which way is better, if either is. */
+export interface InsightDelta { change: number; percent: number | null; good: "up" | "down" | null }
+
+export interface InsightTile {
+  key: string;
+  label: string;
+  value: number | null;
+  display: string;
+  sub: string;
+  to: string;
+  /** One value per day, week or month of the period. A gap is a stretch with nothing to average. */
+  spark: (number | null)[] | null;
+  delta: InsightDelta | null;
+  alert?: boolean;
+}
+
+export interface FailureRow { label: string; failed: number; total: number; rate: number; to: string }
+export interface EquipmentGroup { title: string; to: string; rows: { key: string; label: string; value: number }[] }
+
+/** The dashboard's deeper views. Every figure opens the records it counts. */
+export interface DashboardInsights {
+  compare: string | null;
+  tiles: InsightTile[];
+  turnaround: { bands: { label: string; value: number }[]; mean: number | null; on_time: number; late: number; to: string };
+  outlook: {
+    overdue: { value: number; to: string };
+    days: { date: string; value: number; to: string }[];
+    later: { value: number; to: string };
+  };
+  ageing: {
+    bands: { key: string; label: string }[];
+    stages: { key: string; label: string; values: number[]; links: string[] }[];
+  };
+  failures: { tests: FailureRow[]; products: FailureRow[] };
+  equipment?: { instruments?: EquipmentGroup; materials?: EquipmentGroup };
 }
 
 export interface ReportTrend {

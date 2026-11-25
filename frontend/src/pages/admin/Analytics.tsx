@@ -108,7 +108,7 @@ export default function Analytics() {
             />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 16, marginBottom: 18 }}>
             <div className="card" style={{ margin: 0 }}>
               <div className="card-head">
                 <h2>Where samples are now</h2>
@@ -171,7 +171,7 @@ export default function Analytics() {
             </div>
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 16, marginBottom: 18 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(min(320px, 100%), 1fr))", gap: 16, marginBottom: 18 }}>
             <div className="card" style={{ margin: 0 }}>
               <div className="card-head">
                 <h2>Workload by analyst</h2>

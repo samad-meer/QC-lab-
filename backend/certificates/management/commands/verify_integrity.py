@@ -7,7 +7,7 @@ import hashlib
 from django.core.management.base import BaseCommand, CommandError
 
 from audit.services import record
-from batches.models import BatchDocument
+from batches.models import BatchCheckpointEntry, BatchDocument
 from certificates.models import Certificate
 from certificates.services import integrity_problems
 from execution.models import Attachment
@@ -33,8 +33,13 @@ class Command(BaseCommand):
         for cert in certificates.iterator(chunk_size=500):
             problems += [f"{cert.sample.sample_no} v{cert.version}: {p}" for p in integrity_problems(cert)]
         files = 0
-        for model, label in ((Attachment, "attachment"), (BatchDocument, "batch document")):
-            for stored in model.objects.iterator(chunk_size=500):
+        stored_files = (
+            (Attachment.objects.all(), "attachment"),
+            (BatchDocument.objects.all(), "batch document"),
+            (BatchCheckpointEntry.objects.exclude(file=""), "batch record file"),
+        )
+        for rows, label in stored_files:
+            for stored in rows.iterator(chunk_size=500):
                 files += 1
                 problem = _file_problem(stored, f"{label} {stored.pk}")
                 if problem:

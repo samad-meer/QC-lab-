@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { apiGet, apiPost, apiUpload } from "../api";
 import BatchModal from "../components/BatchModal";
+import BatchProgress from "../components/BatchProgress";
 import BatchStages from "../components/BatchStages";
 import CommentModal from "../components/CommentModal";
 import { FileRow } from "../components/execution/Documents";
@@ -151,6 +152,8 @@ export default function BatchDetailPage() {
           {batch.product.name} ({batch.product.code}) · internal ID <span className="mono">{batch.internal_id}</span>
         </p>
       </div>
+
+      <BatchProgress batch={batch} />
 
       <div className="card">
         <div className="card-head">

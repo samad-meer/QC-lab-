@@ -8,7 +8,7 @@ dates can be filtered on. The screens have the one matching control
 
 A list reads these query parameters:
 
-- period=today|week|month|quarter|all, or from= and to= (either may be left
+- period=today|week|lastweek|month|lastmonth|quarter|all, or from= and to= (either may be left
   open) — a date, or a date and time. Naive values are in the lab's time zone.
 - date_field= — which date to filter on, where a list has more than one.
 - q= — text to look for, where a list can be searched.
@@ -34,7 +34,9 @@ MAX_PAGE_SIZE = 200
 PERIODS = {
     "today": "Today",
     "week": "This week",
+    "lastweek": "Last week",
     "month": "This month",
+    "lastmonth": "Last month",
     "quarter": "Last 90 days",
     "all": "All time",
 }
@@ -81,9 +83,16 @@ def period_window(period: str) -> Window:
     elif period == "week":
         start = today - timedelta(days=today.weekday())
         stop = start + timedelta(days=7)
+    elif period == "lastweek":
+        # The week that has ended: what a weekly report is about when it is printed on a Monday.
+        stop = today - timedelta(days=today.weekday())
+        start = stop - timedelta(days=7)
     elif period == "month":
         start = today.replace(day=1)
         stop = (start + timedelta(days=32)).replace(day=1)
+    elif period == "lastmonth":
+        stop = today.replace(day=1)
+        start = (stop - timedelta(days=1)).replace(day=1)
     elif period == "quarter":
         start, stop = today - timedelta(days=89), tomorrow
     else:

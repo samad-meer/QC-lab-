@@ -29,6 +29,7 @@ from lims.models import (
     SampleType,
     Section,
     Specification,
+    TestDefinition,
     TestResult,
     WorkflowEvent,
     WorkflowStage,
@@ -89,6 +90,28 @@ def visible_samples(user):
 
 def overdue(qs):
     return qs.exclude(status__in=FINISHED).filter(due_date__lt=timezone.localdate())
+
+
+# How near a sample still in the lab is to its due date. The dashboard's chart of them and the
+# Sample Register's filter read the same definition, so a slice opens exactly the samples it counts.
+DUE_SOON_DAYS = 3
+DUE_BANDS = {
+    "overdue": "Overdue",
+    "soon": f"Due in the next {DUE_SOON_DAYS} days",
+    "later": "Due later",
+}
+
+
+def open_due(qs, band: str):
+    """Samples still in the lab that are past their due date, due within a few days, or due later."""
+    today = timezone.localdate()
+    live = qs.exclude(status__in=FINISHED)
+    if band == "overdue":
+        return live.filter(due_date__lt=today)
+    edge = today + timedelta(days=DUE_SOON_DAYS)
+    if band == "soon":
+        return live.filter(due_date__gte=today, due_date__lte=edge)
+    return live.filter(due_date__gt=edge)
 
 
 def batch_text(sample) -> str:
@@ -251,6 +274,11 @@ def section_options(request) -> list[tuple]:
 def analyst_options(request) -> list[tuple]:
     ids = samples_visible_to(request.user).order_by().values("assigned_analyst")
     return [(u.id, u.display_name()) for u in User.objects.filter(pk__in=ids).order_by("first_name", "username")]
+
+
+def test_name_options(request) -> list[tuple]:
+    names = TestDefinition.objects.order_by().values_list("name", flat=True).distinct()
+    return [(n, n) for n in sorted(set(names))]
 
 
 def spec_options(request) -> list[tuple]:

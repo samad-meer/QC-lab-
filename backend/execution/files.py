@@ -86,9 +86,10 @@ def check_upload(uploaded, allowed_types: list[str] | None, max_mb: int) -> tupl
     ext = extension_of(uploaded.name)
     allowed = [t for t in (allowed_types or ALLOWED.keys()) if t in ALLOWED]
     if ext not in ALLOWED:
+        # Name only what this upload may be, not every type the lab accepts somewhere.
         raise FileRejected(
             f"“.{ext or '?'}” files are not accepted. Upload one of: "
-            + ", ".join(sorted({ALLOWED[t][1] for t in ALLOWED})) + "."
+            + ", ".join(sorted({ALLOWED[t][1] for t in (allowed if allowed_types else ALLOWED)})) + "."
         )
     if ext not in allowed:
         raise FileRejected(

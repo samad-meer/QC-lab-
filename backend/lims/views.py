@@ -148,6 +148,10 @@ def samples(request):
         qs = samples_visible_to(request.user)
         if request.query_params.get("mine"):
             qs = qs.filter(assigned_analyst=request.user)
+        # The samples one analyst holds: the assignment screen's view of a person.
+        analyst = request.query_params.get("analyst", "")
+        if analyst.isdigit():
+            qs = qs.filter(assigned_analyst_id=int(analyst))
         status_filter = request.query_params.get("status")
         if status_filter:
             if status_filter != "ALL":

@@ -15,6 +15,7 @@ from execution.tests import ExecutionTestBase
 from labrecords.models import CalibrationEvent, CalibrationKind, CalibrationOutcome, Instrument, InstrumentStatus, Qualification
 from .alerts import send_due_alerts
 from .email import MAX_ATTEMPTS, send_queued
+from .worker import run_round
 from .models import EmailOutbox, Notification
 from .rules import rule_for
 from .services import notify
@@ -211,11 +212,18 @@ class EmailTests(ExecutionTestBase):
         self.assertEqual(send_queued(), 0)
         self.assertEqual(mail.outbox, [])
 
-    def test_the_next_look_at_the_bell_sends_it(self):
+    def test_the_next_round_of_the_background_worker_sends_it(self):
+        self.alert()
+        run_round()
+        self.assertEqual(len(mail.outbox), 1)
+
+    def test_looking_at_the_bell_sends_nothing(self):
+        """The mail server can take 8 seconds to answer. Nobody's page waits for it."""
         self.alert()
         self.login(self.frontdesk)
         self.assertEqual(self.client.get("/api/notifications/").status_code, 200)
-        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox, [])
+        self.assertIsNone(EmailOutbox.objects.get().sent_at)
 
     def test_nothing_is_queued_without_an_address(self):
         notify(self.frontdesk, "CERT_RELEASED", "Released")

@@ -189,6 +189,8 @@ class CheckpointKind(models.TextChoices):
     # Options the lab types itself, such as Complies / Does not comply; an answer
     # not marked acceptable is flagged like a number outside its limits.
     CHOICE = "CHOICE", "Choice from a list"
+    # A photo or a PDF kept on the record: a balance printout, a label, a chromatogram.
+    FILE = "FILE", "Photo or file"
 
 
 class QcCheckpoint(_Fixed):
@@ -492,6 +494,11 @@ class BatchDocument(models.Model):
         raise PermissionError("Batch documents are never deleted — withdraw one with a reason instead.")
 
 
+def entry_file_path(instance, filename: str) -> str:
+    """Never reuse the uploaded name on disk — it can carry path separators."""
+    return f"batch-record-files/{instance.batch_id}/{uuid.uuid4().hex}.{instance.extension}"
+
+
 class BatchCheckpointEntry(_Fixed):
     """
     A value written on a batch's record for one check point. Never changed: a
@@ -512,6 +519,14 @@ class BatchCheckpointEntry(_Fixed):
     correction = models.CharField(max_length=500, blank=True)  # why a value already written was changed
     entered_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+")
     entered_at = models.DateTimeField(auto_now_add=True)
+    # A photo or file, for a check point of that kind. `text` holds its name as uploaded. Stored
+    # under MEDIA_ROOT with no public address and served only to people who can see the batch;
+    # sha256 is what verify_integrity checks it against.
+    file = models.FileField(upload_to=entry_file_path, max_length=200, blank=True)
+    extension = models.CharField(max_length=10, blank=True)
+    content_type = models.CharField(max_length=100, blank=True)
+    size = models.PositiveIntegerField(default=0)
+    sha256 = models.CharField(max_length=64, blank=True)
 
     class Meta:
         ordering = ["entered_at", "id"]

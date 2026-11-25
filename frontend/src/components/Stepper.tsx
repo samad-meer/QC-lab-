@@ -1,4 +1,4 @@
-import type { SampleStatus, WorkflowStage } from "../types";
+import type { Execution, SampleStatus, WorkflowStage } from "../types";
 
 /**
  * The journey, made visible: where this sample has got to, and which of
@@ -60,12 +60,33 @@ export function journeySteps(
   }));
 }
 
+/**
+ * Who has done each step so far, by name: whoever completed the receipt checks, the analyst
+ * who signed the results (or holds the testing until they do), each reviewer who signed.
+ * A step nobody has done yet is left blank, so its role shows instead.
+ */
+export function journeyNames(
+  exec: Execution | null | undefined,
+  stages: WorkflowStage[],
+  analyst?: string,
+): (string | undefined)[] {
+  const done = (key: string) => {
+    const step = exec?.steps.find((s) => s.key === key);
+    const own = [...(step?.decisions ?? [])].reverse().find(
+      (d) => ["COMPLETED", "SUBMITTED", "PASSED"].includes(d.outcome) && (key === "RECEIPT" || d.attempt === exec?.attempt),
+    );
+    return own?.by?.name;
+  };
+  return [done("RECEIPT"), done("TESTING") ?? analyst, ...stages.map((s) => done(s.code)), undefined];
+}
+
 export default function Stepper({
   status,
   stages,
   reviewStage = null,
   printed = false,
   mine = false,
+  names,
 }: {
   /** null previews the chain without marking any step — the workflow editor. */
   status: SampleStatus | null;
@@ -75,8 +96,10 @@ export default function Stepper({
   printed?: boolean;
   /** The current step is waiting for the person looking at it. */
   mine?: boolean;
+  /** Who did each step, by name, in step order (see journeyNames). */
+  names?: (string | null | undefined)[];
 }) {
-  const steps = journeySteps(status, stages, reviewStage, printed);
+  const steps = journeySteps(status, stages, reviewStage, printed, names);
 
   return (
     <div className="stepper" role="list" aria-label="Sample progress">

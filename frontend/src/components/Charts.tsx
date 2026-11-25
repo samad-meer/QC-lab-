@@ -1,13 +1,18 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 
 /**
  * Small charts, written against the design tokens.
  *
- * Every chart here is SINGLE-HUE on purpose: bar length carries the
+ * The bar charts are SINGLE-HUE on purpose: bar length carries the
  * magnitude, so colour never has to be told apart. That sidesteps the
  * colour-blindness problem entirely rather than mitigating it — and the one
  * blue used was checked for ≥3:1 contrast on both the light and dark card
  * surfaces. Pass/fail is shown as a labelled badge, never as colour alone.
+ *
+ * The donut needs several colours, so it never leans on them: every slice is
+ * named in a legend beside it with its count and share, in the order it is
+ * drawn, and the legend rows open the records behind each slice.
  */
 
 export interface BarDatum {
@@ -143,6 +148,149 @@ export function Stat({
       <div className="stat-label">{label}</div>
       <div className="stat-value">{value}</div>
       {sub && <div className="stat-sub">{sub}</div>}
+    </div>
+  );
+}
+
+export interface DonutSlice {
+  label: string;
+  value: number;
+  /** A colour token, such as "var(--pass)". */
+  color: string;
+  /** The records behind this slice. */
+  to?: string;
+}
+
+const RADIUS = 46;
+const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+
+function share(value: number, total: number): string {
+  if (!total || value <= 0) return "0%";
+  const pct = (value / total) * 100;
+  return pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+}
+
+/**
+ * A pie with a hole: how a whole divides into a few parts. The total (or a figure the caller
+ * chooses, such as a pass rate) sits in the hole; pointing at a slice or its legend row shows
+ * that part instead. A part of nothing is listed but not drawn, so a lab with no failures still
+ * sees "Failed 0".
+ */
+export function DonutChart({
+  slices,
+  name,
+  centerValue,
+  centerLabel,
+  emptyText = "Nothing to show yet.",
+}: {
+  slices: DonutSlice[];
+  /** What is being divided, for people using a screen reader. */
+  name: string;
+  centerValue?: string | number;
+  centerLabel?: string;
+  emptyText?: string;
+}) {
+  const [active, setActive] = useState<number | null>(null);
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
+  const drawn = slices.filter((s) => s.value > 0).length;
+  const gap = drawn > 1 ? 2.4 : 0;
+  let cursor = 0;
+  const arcs = slices.map((s) => {
+    if (s.value <= 0 || total === 0) return null;
+    const length = (s.value / total) * CIRCUMFERENCE;
+    const arc = { length: Math.max(length - gap, 0.6), start: cursor + gap / 2 };
+    cursor += length;
+    return arc;
+  });
+  const chosen = active === null ? null : slices[active];
+  const summary = `${name}: ${slices.map((s) => `${s.value} ${s.label.toLowerCase()}`).join(", ")}`;
+
+  return (
+    <div className={`donut${total === 0 ? " empty" : ""}`}>
+      <div className="donut-ring">
+        <svg viewBox="0 0 120 120" role="img" aria-label={summary}>
+          <circle className="donut-track" cx="60" cy="60" r={RADIUS} />
+          {slices.map((s, i) => {
+            const arc = arcs[i];
+            return arc && (
+              <circle
+                key={s.label}
+                className={`donut-slice${active === i ? " on" : ""}`}
+                cx="60" cy="60" r={RADIUS}
+                stroke={s.color}
+                strokeDasharray={`${arc.length} ${CIRCUMFERENCE - arc.length}`}
+                strokeDashoffset={-arc.start}
+                onMouseEnter={() => setActive(i)}
+                onMouseLeave={() => setActive(null)}
+              >
+                <title>{`${s.label}: ${s.value} (${share(s.value, total)})`}</title>
+              </circle>
+            );
+          })}
+        </svg>
+        <div className="donut-center" aria-hidden="true">
+          <b>{chosen ? chosen.value : centerValue ?? total}</b>
+          <span>{chosen ? `${chosen.label} · ${share(chosen.value, total)}` : centerLabel ?? "in total"}</span>
+        </div>
+      </div>
+      {total === 0 ? (
+        <p className="donut-empty">{emptyText}</p>
+      ) : (
+        <ul className="donut-legend">
+          {slices.map((s, i) => {
+            const row = (
+              <>
+                <i style={{ background: s.color }} aria-hidden="true" />
+                <span className="donut-name">{s.label}</span>
+                <b>{s.value}</b>
+                <small>{share(s.value, total)}</small>
+              </>
+            );
+            return (
+              <li key={s.label} className={`${s.value === 0 ? "zero" : ""}${active === i ? " on" : ""}`}
+                onMouseEnter={() => setActive(i)} onMouseLeave={() => setActive(null)}>
+                {s.to
+                  ? <Link to={s.to} className="donut-row" onFocus={() => setActive(i)} onBlur={() => setActive(null)}>{row}</Link>
+                  : <div className="donut-row">{row}</div>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Work held per person: the bar is what they hold, and the part of it already past its due date is
+ * marked. Words beside every bar give the same two figures, so colour is never the only signal.
+ */
+export function WorkloadBars({
+  rows,
+  emptyText = "Nobody holds any work.",
+}: {
+  rows: { label: string; pending: number; overdue: number; to?: string }[];
+  emptyText?: string;
+}) {
+  if (rows.length === 0) {
+    return <div style={{ color: "var(--ink-3)", fontSize: 13, padding: "10px 0" }}>{emptyText}</div>;
+  }
+  const max = Math.max(1, ...rows.map((r) => r.pending));
+  return (
+    <div className="wl">
+      {rows.map((r) => (
+        <div className="wl-row" key={r.label}>
+          <div className="wl-label">{r.to ? <Link to={r.to}>{r.label}</Link> : r.label}</div>
+          <div className="wl-track" role="img" aria-label={`${r.pending} held, ${r.overdue} overdue`}>
+            <span className="wl-late" style={{ width: `${(r.overdue / max) * 100}%` }} />
+            <span className="wl-rest" style={{ width: `${((r.pending - r.overdue) / max) * 100}%` }} />
+          </div>
+          <div className="wl-value">
+            <b>{r.pending}</b>
+            {r.overdue > 0 && <small>{r.overdue} late</small>}
+          </div>
+        </div>
+      ))}
     </div>
   );
 }

@@ -4,7 +4,6 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from .alerts import flush_email, sweep_if_due
 from .models import Notification
 
 LIMIT = 50
@@ -35,8 +34,8 @@ def _state(user) -> dict:
 
 @api_view(["GET"])
 def notifications(request):
-    sweep_if_due()
-    flush_email()
+    # Only reads. Every open page asks this every 30 seconds, so nothing slow may happen here: the
+    # due-date sweep and the queued email are done by the background worker (worker.py).
     return Response(_state(request.user))
 
 

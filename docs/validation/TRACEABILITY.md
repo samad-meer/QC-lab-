@@ -36,6 +36,9 @@ Automated tests are supporting evidence. The OQ step is the validation evidence.
 | C5 | `quality/test_failure_path.py` (withdrawal) | 29 |
 | C6 | `batches/test_disposition.py` | 30 |
 | C7 | `batches/test_qc_stages.py` | 44, 45, 46 |
+| C8 | `batches/test_batch_records.py` | 47, 48, 49 |
+| C9 | `batches/test_stage_assignment.py` | 50 |
+| C10 | `batches/test_record_files.py` | 51, 52, 53, 54, 55 |
 | D1 | `accounts/tests.py` | 1 |
 | D2 | `accounts/test_sign_in.py` | 1, 2 |
 | D3 | `accounts/test_sign_in.py` | 3 |
@@ -51,3 +54,9 @@ Automated tests are supporting evidence. The OQ step is the validation evidence.
 | Q2 | `reports/tests.py` | 38 |
 | Q3 | `reports/tests.py`, `reports/test_fixes.py` | 39 |
 | Q4 | `labrecords/test_changes.py` | PQ 5 |
+| Q5 | `reports/test_team_reports.py` (Person Activity), `reports/test_report_permissions.py` | 56, 57 |
+| Q6 | `reports/test_team_reports.py` (open work, batch stages) | 58 |
+| Q7 | `qclab/tests.py` (last week and last month) | 59 |
+| Q8 | `reports/test_dashboard_charts.py`, `reports/tests.py` (DashboardTests) | 62 |
+| U1 | None: checked in a browser at several widths | 60 |
+| U2 | `notifications/test_worker.py`, `notifications/tests.py`, `notifications/test_lab_alerts.py` | 61 |

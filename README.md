@@ -231,12 +231,16 @@ they were registered under).
 - **Email** is off until a mail server is named (`QCLAB_EMAIL_HOST` and friends in
   `deploy/qclab.env.example`). An email is queued in the same transaction as the
   action that caused it, so a signature never waits on a mail server and an action
-  that rolls back sends nothing. The queue goes out on the next look at any
-  person's bell, or on `send_due_alerts`, with retries; one that fails for good is
-  on the audit trail. Notification rules has a button to send yourself a test.
+  that rolls back sends nothing. A background worker in the web server sends the
+  queue within 30 seconds, and sweeps for due dates once an hour, so no page ever
+  waits on a mail server (`send_due_alerts` does the same from a scheduler, with
+  `QCLAB_BACKGROUND=0` to switch the worker off). Failed email is retried; one that
+  fails for good is on the audit trail. Notification rules has a button to send
+  yourself a test.
 - **Dashboard** (`/dashboard`, opened by clicking the system name): what is
   waiting on you, your notifications, where the samples you can see stand,
-  and shortcuts for your role.
+  the lab at a glance in a few charts (see Reports below), and shortcuts for
+  your role.
 
 Every record carries the person and a server-side timestamp, shown to the
 second. New permissions: `sample.assign`, `sample.hold`,
@@ -352,8 +356,9 @@ screen, `useList` (`frontend/src/useList.ts`) loads a page and `ListCard`,
 a page supplies only its words, its own filters and how a row looks. A new list
 needs none of this written again.
 
-- **Dates.** A named period (today, this week, this month, last 90 days, all
-  time), or any from and to, to the minute. The end includes its whole last
+- **Dates.** A named period (today, this week, last week, this month, last month,
+  last 90 days, all time), or any from and to, to the minute. Last week and last month
+  are the ones that have ended, which is what a weekly or monthly report is about. The end includes its whole last
   minute, and a date with no time covers the whole day. Sample lists can filter
   on the received date or the due date. Dates that make no sense are refused
   with a message, never ignored.
@@ -370,7 +375,7 @@ reason Pending Work and Overdue Work have no date filter; every other report doe
 ## Analytics and the activity log
 
 Two admin screens, both driven by the same time ranges — **Today / This week /
-This month / Last 90 days / All time**. Weeks start Monday and months on the 1st:
+Last week / This month / Last month / Last 90 days / All time**. Weeks start Monday and months on the 1st:
 "this week" means the week you are in, not a rolling seven days.
 
 **Analytics** (`/admin/analytics`) — samples received and released, median and
@@ -387,12 +392,16 @@ with the raw action code, the record it touched, and the address it came from.
 Filter by period, person, record or action; or show only refusals and
 corrections — the rows an inspector goes looking for.
 
-Charts are deliberately **single-hue**: bar length carries the magnitude, so
+The bar charts are deliberately **single-hue**: bar length carries the magnitude, so
 colour never has to be told apart, and pass/fail is always a labelled badge
 rather than a colour. The blue was checked for ≥3:1 contrast on both the light
 and dark card surfaces. The two line charts on the Reports dashboard need a second
 colour: `--chart-1` and `--chart-2` were validated together for colour blindness
 and contrast in both themes, and each line also has a legend entry and an end label.
+The donut charts on the dashboard need several colours, so they never lean on them:
+every slice is named in a legend beside the ring with its count and its share, and a
+colour keeps one meaning across charts (red is late or failed, amber is near or
+waiting, green is done).
 
 ## Reports (`backend/reports/`)
 
@@ -405,7 +414,7 @@ happened in the period, and every report you may open.
 | Sample reports | Sample Register, Sample History, Turnaround Time |
 | Test results and failures | Test Results Register, OOS Investigations, OOT Trends, Retest History |
 | Batch and product | Batch QC Summary, Product Quality History, Certificates of Analysis |
-| Workflow and performance | Pending Work, Overdue Work, Analyst Workload, Workflow Bottlenecks |
+| Workflow and performance | Pending Work, Overdue Work, Analyst Workload, Workflow Bottlenecks, Tasks by Person, Team Tasks, Person Activity |
 | Quality and compliance | Audit Trail, Document Control, Deviations & CAPA |
 
 **One way to report anything.** A report states which records it reads, its
@@ -420,7 +429,29 @@ Summary and Product Quality History are about one thing, so they are documents
   reads through `samples_visible_to`, and a filter can only narrow it. An analyst
   without `sample.view.all` gets their own samples throughout.
 - **A number opens its records.** Every tile on the dashboard is a link to the
-  list behind it, and that list has the same count.
+  list behind it, and that list has the same count. So is every slice of the
+  donut charts below, and each has a test that opens the slice and compares.
+- **Lab at a glance** (the dashboard, with a period picker: this and last week,
+  this and last month, last 90 days). Six headline figures, each beside the same
+  stretch of the period before (this month so far against the same days of last
+  month) and with a small trend of its own: samples received and completed, the
+  test pass rate, the average turnaround, the share released by their due date,
+  and what is overdue now. Below them, four views:
+  *Overview*: received against completed over time, passed and failed results
+  over time, and donuts for the samples in the lab by due date, the results, and
+  the samples by section. *Workload*: what falls due over the next two weeks (a
+  column for each day, what is already late standing apart), how long the samples
+  in the lab have waited at each stage, how long release took with the share that
+  made its due date, and the open work each analyst holds. *Quality*: which tests
+  and which products the failures come from, against everything entered for each,
+  and the investigations and batch decisions. *Equipment*: the instruments by when
+  their calibration runs out, and the standards and reagents by expiry. It is the
+  same data as the reports, read through the same visibility rules: an analyst
+  sees their own samples, and the batch donut, the analyst bars and the equipment
+  views are left out for anyone who may not see them. A chart with nothing to show
+  says so instead of drawing empty. Every chart has its values in a table under it
+  and answers the keyboard. The analyst bars are for planning, not for ranking
+  people.
 - **Three failures, counted apart.** A failed test is one result. A sample with
   a failed test is not a failed sample decision. A batch disposition is a
   release decision, which this system does not record, and a released
@@ -437,6 +468,34 @@ Summary and Product Quality History are about one thing, so they are documents
   test complexity and investigation work vary too much for volume to rank anyone.
 - **One way to write a date.** Every report writes dates as `30-Oct-2026 14:05:12`
   in the lab's time zone, whoever opens it and wherever they are.
+
+**Who holds what, and what each person did** (`reports/team.py`). Three reports read
+one list of open work, worked out from the same places as My tasks, so they cannot
+disagree with a person's own list: samples waiting on someone (testing, handovers,
+returns), reviews and approvals (which wait on a *role* until someone takes them, so
+they are counted under the role), the recorded stages of a batch the supervisor named
+someone to fill, investigations, and CAPA actions.
+
+- **Tasks by Person** counts what each person holds, by kind, with how many are late and
+  how long the oldest has waited. A name opens that person's tasks in Team Tasks;
+  *Include people with no tasks* lists the rest.
+- **Team Tasks** lists every open task: who holds it, what it is and where (product and
+  batch), what it needs, who gave it, when, when it falls due and its status. *Assigned
+  in* takes a week, a month or any dates, so it shows what was handed out in them.
+  Filters: person, kind, product, only overdue.
+- **Person Activity** is one person's week or month: what was given to them, what they
+  did and signed (read from the activity log, so it is the same record an inspector
+  sees), and what they still hold. It opens on the signed-in person ("Me") with *This
+  week*, and filters by month, any dates and kind of work. The **PDF to print** button
+  heads the page with whose report it is. Everyone may open and print their own;
+  choosing another person needs `report.performance`, and printing another person's
+  needs `report.export`. It counts actions, which say nothing about how hard the work
+  was, so like Analyst Workload it is for planning and not a ranking.
+
+`accounts/0028` gives every active role "Open reports" with Person Activity and nothing
+else (each report is a permission of its own, so no other report opens), and the two
+team reports to roles that already held `report.performance`. Take them away on the
+Roles screen.
 
 **Exports.** CSV, Excel and PDF, built from the same rows as the screen, covering
 every page of the selection. Excel and PDF carry the filters, who generated them
@@ -602,7 +661,8 @@ and every batch gets its own run of them.
   record. On the product page it gets *steps* (Premixing, Preparation of binding
   solution, Drying), each with its instructions and *check points*: a number with its
   unit (kg, L, °C), a percentage, a start and end time, a time, a date, text, yes / no,
-  or a *choice from a list* whose options the lab types, marking which are acceptable.
+  a *photo or file* (a balance printout, a label, a chromatogram), or a *choice from a
+  list* whose options the lab types, marking which are acceptable.
   A number or percentage can have limits, such as LOD 3.00 – 4.50 %; a choice answered
   with an option not marked acceptable is flagged like a number outside its limits.
   A kind the list lacks is added with *+ New kind…* at the end of the list (Temperature
@@ -619,7 +679,15 @@ and every batch gets its own run of them.
   acknowledges every value out of limit, with a comment. The stage passes when the
   last column is signed. Release waits for that, and an optional stage with an
   unacknowledged value out of limit holds release too. Everything is append-only
-  (`batches/0006`). A recorded stage with no sign-off columns is still recorded passed
+  (`batches/0006`). Each check point is marked required or optional where it is set up,
+  and a required one keeps the stage from being signed until it is written.
+  **A photo or file** takes JPEG, PNG, WebP or PDF up to 10 MB, checked by its first
+  bytes and not its name, and is chosen with the other values on the batch page (a
+  phone offers its camera). It is kept under `MEDIA_ROOT` with no public address, served
+  only to people who can see the batch (`/api/batch-record-files/<id>/`, with its
+  checked type), hashed with SHA-256 and covered by `verify_integrity`. Changing it
+  needs a reason and the first stays on the record; the same file again changes nothing;
+  and it is final once the first column is signed (`batches/0010`). A recorded stage with no sign-off columns is still recorded passed
   or failed by QA, as before.
 - **Signed under every step, or once.** Each batch-record stage says where its columns
   are signed (`batches/0008`). *Under every step*, as the paper record has it, each step

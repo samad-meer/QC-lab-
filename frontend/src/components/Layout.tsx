@@ -7,6 +7,7 @@ import { useTheme } from "../theme";
 import type { Summary, Tasks } from "../types";
 import AdminMenu from "./AdminMenu";
 import type { AdminLink } from "./AdminMenu";
+import AccountMenu from "./AccountMenu";
 import Avatar from "./Avatar";
 import BrandMark from "./BrandMark";
 import { Backdrop } from "./Decor";
@@ -16,13 +17,15 @@ import { NotificationBell, POLL_MS, useNotifications } from "./Notifications";
  * How far the top bar has had to give way to keep its menu on one line. Each step
  * gives up a little more, and the steps add up: 1 tighter spacing; 2 your name and
  * role hide behind your picture and Sign out keeps only its icon; 3 the tagline
- * hides and a long lab name is shortened; 4 only the logo stays; 5 smaller menu text.
+ * hides and a long lab name is shortened; 4 smaller menu text. The lab's name never
+ * goes: it is who the bar belongs to.
  * When even that is not enough, the menu takes a row of its own.
  * Measured, not guessed from the width: what the bar holds depends on the role, the
  * lab's name and the zoom.
  */
-const FIT_STEPS = 5;
-const PHONE = 760;
+const FIT_STEPS = 4;
+/** Under this width the bar is one compact row and the menu opens from a button (see .topbar in index.css). */
+const COMPACT = 960;
 
 function fitBar(bar: HTMLElement, menu: HTMLElement) {
   const wraps = () => {
@@ -31,8 +34,8 @@ function fitBar(bar: HTMLElement, menu: HTMLElement) {
   };
   let step = 0;
   bar.dataset.fit = "";
-  // A phone has its own layout, the menu on a row of its own.
-  if (window.innerWidth <= PHONE) return;
+  // A phone or a small window has its own layout: one row, and the menu opens from a button.
+  if (window.innerWidth <= COMPACT) return;
   while (step < FIT_STEPS && wraps()) {
     step += 1;
     bar.dataset.fit = Array.from({ length: step }, (_, i) => i + 1).join(" ");
@@ -42,13 +45,26 @@ function fitBar(bar: HTMLElement, menu: HTMLElement) {
   if (wraps()) bar.dataset.fit = "rows";
 }
 
+const SETTINGS_ICON = (
+  <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
+    <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="2" />
+    <path
+      d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
+      fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"
+    />
+  </svg>
+);
+
 export default function Layout({ children }: { children: ReactNode }) {
   const { user, titles, can, logout } = useAuth();
   const { theme, toggle } = useTheme();
   const location = useLocation();
   const [summary, setSummary] = useState<Summary | null>(null);
   const [tasks, setTasks] = useState(0);
-  const newest = useNotifications().data?.items[0]?.id;
+  const bell = useNotifications().data;
+  const newest = bell ? (bell.items[0]?.id ?? 0) : null; // null until the bell has first been read
+  const [menuOpen, setMenuOpen] = useState(false);
+  const toggleButton = useRef<HTMLButtonElement>(null);
 
   // Refresh the nav badges whenever the route changes — after signing or
   // sending work back, the count the user sees should already be right — and
@@ -61,7 +77,17 @@ export default function Layout({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     refreshBadges();
-  }, [refreshBadges, location.pathname, newest]);
+  }, [refreshBadges, location.pathname]);
+
+  // A notification arriving means work may have landed on you. The first time the bell is read is
+  // not an arrival: this page has just refreshed the badges itself, so doing it again would only
+  // repeat the two slowest calls of every page load.
+  const lastSeen = useRef<number | null>(null);
+  useEffect(() => {
+    if (newest === null) return;
+    if (lastSeen.current !== null && newest > lastSeen.current) refreshBadges();
+    lastSeen.current = newest;
+  }, [newest, refreshBadges]);
 
   useEffect(() => {
     const timer = window.setInterval(refreshBadges, POLL_MS);
@@ -71,6 +97,35 @@ export default function Layout({ children }: { children: ReactNode }) {
       window.removeEventListener("focus", refreshBadges);
     };
   }, [refreshBadges]);
+
+  // The compact menu closes when a page opens, on Escape, on a click or tap outside the bar, and
+  // when the window grows wide enough for the full menu. Opened, it takes the keyboard's place (its
+  // links come before the bar's buttons in the page); closed with Escape, focus goes back to its button.
+  useEffect(() => setMenuOpen(false), [location.pathname]);
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    menu.current?.querySelector<HTMLElement>("a, button")?.focus({ preventScroll: true });
+    const outside = (e: Event) => {
+      if (!bar.current?.contains(e.target as Node)) setMenuOpen(false);
+    };
+    const key = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setMenuOpen(false);
+        toggleButton.current?.focus();
+      }
+    };
+    const resize = () => {
+      if (window.innerWidth > COMPACT) setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    document.addEventListener("keydown", key);
+    window.addEventListener("resize", resize);
+    return () => {
+      document.removeEventListener("pointerdown", outside);
+      document.removeEventListener("keydown", key);
+      window.removeEventListener("resize", resize);
+    };
+  }, [menuOpen]);
 
   // The tab says which page this is, then the system's name as set in Settings.
   useEffect(() => {
@@ -140,8 +195,8 @@ export default function Layout({ children }: { children: ReactNode }) {
     <Backdrop />
     <div className="app-shell">
       <a className="skip-link" href="#main">Skip to content</a>
-      <header className="topbar" ref={bar}>
-        <Link to="/dashboard" className="brand" title="Open the dashboard">
+      <header className={`topbar${menuOpen ? " menu-open" : ""}`} ref={bar}>
+        <Link to="/dashboard" className="brand" title={`${titles.lab_name} — open the dashboard`}>
           <BrandMark />
           <div className="brand-text">
             <b>{titles.lab_name}</b>
@@ -149,12 +204,13 @@ export default function Layout({ children }: { children: ReactNode }) {
           </div>
         </Link>
 
-        <nav className="topnav" aria-label="Main" ref={menu}>
+        <nav className="topnav" id="main-menu" aria-label="Main" ref={menu}>
           <NavLink to="/tasks">
             My tasks
             {tasks > 0 && <span className="nav-count">{tasks}</span>}
           </NavLink>
           {can("sample.register") && <NavLink to="/frontdesk">Receive samples</NavLink>}
+          {can("sample.assign") && <NavLink to="/assign">Assign work</NavLink>}
           {/* An administrator works from All samples; this is theirs only once something is assigned to them. */}
           {can("result.enter") && (!can("admin.override") || waiting > 0) && (
             <NavLink to="/worklist">
@@ -173,42 +229,40 @@ export default function Layout({ children }: { children: ReactNode }) {
           {LAB_REGISTER_VIEWS.some(can) && <NavLink to="/lab">Lab records</NavLink>}
           {can("report.view") && <NavLink to="/reports">Reports</NavLink>}
           {adminLinks.length > 0 && <AdminMenu links={adminLinks} />}
+          {/* On a small screen these leave the bar and wait in the menu, with their names. */}
+          <div className="nav-tools">
+            {can("config.manage") && <NavLink to="/admin/settings" className="nav-tool">{SETTINGS_ICON}Settings</NavLink>}
+            <button type="button" className="nav-tool" onClick={toggle}>
+              <span aria-hidden="true">{theme === "dark" ? "☀" : "☾"}</span>
+              {theme === "dark" ? "Light theme" : "Dark theme"}
+            </button>
+            <Link to="/profile" className="nav-tool">My account</Link>
+            <button type="button" className="nav-tool nav-signout" onClick={() => void logout()}>Sign out</button>
+          </div>
         </nav>
 
         <div className="topbar-right">
           <NotificationBell />
-          {can("config.manage") && (
-            <NavLink to="/admin/settings" className="icon-btn" title="Settings" aria-label="Settings">
-              <svg viewBox="0 0 24 24" width="17" height="17" aria-hidden="true">
-                <circle cx="12" cy="12" r="3" fill="none" stroke="currentColor" strokeWidth="2" />
-                <path
-                  d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"
-                  fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"
-                />
-              </svg>
-            </NavLink>
-          )}
-          <button
-            className="icon-btn"
-            onClick={toggle}
-            aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-            title={theme === "dark" ? "Light theme" : "Dark theme"}
-          >
-            {theme === "dark" ? "☀" : "☾"}
-          </button>
-          <Link to="/profile" className="identity" title="My account">
+          {/* On a computer, you are one menu: account, settings, theme, Sign out. */}
+          <AccountMenu
+            name={user.name}
+            role={user.designation || user.role?.name || "No role"}
+            photoUrl={user.photo_url}
+            theme={theme}
+            onTheme={toggle}
+            onSignOut={() => void logout()}
+            settingsIcon={can("config.manage") ? SETTINGS_ICON : undefined}
+          />
+          {/* On a phone the picture opens My account, and the rest waits in the menu. */}
+          <Link to="/profile" className="identity compact-only" title="My account">
             <Avatar name={user.name} photoUrl={user.photo_url} />
-            <div className="who">
-              <b>{user.name}</b>
-              <span>{user.designation || user.role?.name || "No role"}</span>
-            </div>
           </Link>
-          <button className="signout" title="Sign out" onClick={() => void logout()}>
-            <svg viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4 M16 17l5-5-5-5 M21 12H9"
-                fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+          <button type="button" ref={toggleButton} className="icon-btn menu-toggle" aria-label={menuOpen ? "Close the menu" : "Open the menu"}
+            aria-expanded={menuOpen} aria-controls="main-menu" onClick={() => setMenuOpen((o) => !o)}>
+            <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+              <path d={menuOpen ? "M6 6l12 12M18 6L6 18" : "M4 7h16M4 12h16M4 17h16"} fill="none" stroke="currentColor"
+                strokeWidth="2.2" strokeLinecap="round" />
             </svg>
-            Sign out
           </button>
         </div>
       </header>

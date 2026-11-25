@@ -9,25 +9,31 @@ from collections import defaultdict
 from datetime import timedelta
 from urllib.parse import urlencode
 
-from django.db.models import Count
+from django.db.models import Count, OuterRef, Subquery
 from django.utils import timezone
 
 from accounts.authz import has_perm
+from batches.api import batches_visible_to
 from batches.models import BatchDisposition, DispositionDecision
 from lims.models import Outcome, Section, TestResult
 from lims.workflow import samples_visible_to
 from qclab.listing import window_from
+from quality.models import InvestigationStatus
+from quality.services import visible_investigations
 from .engine import stamp
 from .records import (
+    DUE_BANDS,
     POSITIONS,
     bucket_of,
     days_between,
     mean,
+    open_due,
     overdue,
     time_buckets,
     visible_samples,
 )
 from .workflow import waiting_work
+from . import insights
 
 DEFAULT_PERIOD = "month"
 
@@ -47,15 +53,20 @@ def _local_day(moment):
     return timezone.localtime(moment).date()
 
 
-def _timeline(window, moments_a: list, moments_b: list, names: tuple[str, str]) -> dict:
-    """Two counts over the same stretch of time. Every day, week or month shows, empty or not."""
+def _span(window, moments: list):
+    """The days, weeks or months a period is drawn in: every one shows, empty or not."""
     today = timezone.localdate()
-    days = [_local_day(m) for m in [*moments_a, *moments_b]]
+    days = [_local_day(m) for m in moments]
     start = _local_day(window.start) if window.start else min(days, default=today)
     stop = min(_local_day(window.stop - timedelta(microseconds=1)), today) if window.stop else today
     if stop < start:
         stop = start
-    unit, buckets = time_buckets(start, stop)
+    return time_buckets(start, stop)
+
+
+def _timeline(window, moments_a: list, moments_b: list, names: tuple[str, str]) -> dict:
+    """Two counts over the same stretch of time. Every day, week or month shows, empty or not."""
+    unit, buckets = _span(window, [*moments_a, *moments_b])
 
     def tally(moments):
         counts = defaultdict(int)
@@ -69,6 +80,38 @@ def _timeline(window, moments_a: list, moments_b: list, names: tuple[str, str]) 
         "series": list(names),
         "points": [{"date": day.isoformat(), "values": [a[day], b[day]]} for day in buckets],
     }
+
+
+def _investigations(user, window, period: dict) -> list[dict]:
+    """Where the quality events stand now, and how many closed in the period. Only those this person may see."""
+    seen = visible_investigations(user).order_by()
+    closed = window.apply(seen.filter(status=InvestigationStatus.CLOSED), "closed_at").count()
+    base = "/reports/deviations?"
+    return [
+        {"key": "OPEN", "label": "Under investigation", "value": seen.filter(status=InvestigationStatus.OPEN).count(),
+         "to": base + urlencode({"status": "OPEN"})},
+        {"key": "PENDING_CLOSURE", "label": "Awaiting closure approval",
+         "value": seen.filter(status=InvestigationStatus.PENDING_CLOSURE).count(),
+         "to": base + urlencode({"status": "PENDING_CLOSURE"})},
+        {"key": "CLOSED", "label": "Closed in the period", "value": closed,
+         "to": base + urlencode({"status": "CLOSED", "date_field": "closed", **period})},
+    ]
+
+
+def _batch_decisions(user, window) -> list[dict]:
+    """Batches registered in the period, by the quality unit's latest decision, or none yet."""
+    latest = BatchDisposition.objects.filter(batch=OuterRef("pk")).order_by("-id").values("decision")[:1]
+    counts = dict(
+        window.apply(batches_visible_to(user).order_by(), "created_at")
+        .annotate(decision=Subquery(latest)).values_list("decision").annotate(n=Count("id"))
+    )
+    waiting = counts.get(None, 0)
+    return [
+        {"key": "RELEASED", "label": "Released", "value": counts.get(DispositionDecision.RELEASED, 0)},
+        {"key": "QUARANTINED", "label": "Quarantined", "value": counts.get(DispositionDecision.QUARANTINED, 0)},
+        {"key": "REJECTED", "label": "Rejected", "value": counts.get(DispositionDecision.REJECTED, 0)},
+        {"key": "WAITING", "label": "Waiting for a decision", "value": waiting},
+    ]
 
 
 def build(request) -> dict:
@@ -109,9 +152,8 @@ def build(request) -> dict:
          "to": "/reports/turnaround?" + urlencode({"date_field": "released", **period})},
     ]
 
-    entered = window.apply(
-        TestResult.objects.filter(sample__in=today_scope.values("pk")), "entered_at"
-    ).select_related("sample")
+    scope_results = TestResult.objects.filter(sample__in=today_scope.values("pk"))
+    entered = window.apply(scope_results, "entered_at").select_related("sample")
     outcomes = list(entered.exclude(outcome=Outcome.REPORTED).values_list("outcome", "entered_at"))
     failed = entered.filter(outcome=Outcome.FAIL)
     failures = {
@@ -147,7 +189,23 @@ def build(request) -> dict:
             for key, (label, _) in POSITIONS.items()
         ],
         "sections": sections,
+        # Passed against failed, over the results entered in the period. A result reported only as
+        # "<LOQ" or "ND" is neither, so it is left out of both, as it is on the outcomes chart.
+        "results": {
+            "passed": sum(1 for o, _ in outcomes if o == Outcome.PASS),
+            "failed": failures["tests"],
+            "to_passed": "/reports/test-results?" + urlencode({"outcome": Outcome.PASS, **period}),
+            "to_failed": "/reports/test-results?" + urlencode({"outcome": Outcome.FAIL, **period}),
+        },
+        # Samples still in the lab by how near their due date is: each slice opens the register filtered to it.
+        "due": [
+            {"key": band, "label": label, "value": open_due(samples, band).count(), "to": _register(due=band)}
+            for band, label in DUE_BANDS.items()
+        ],
+        "investigations": _investigations(user, window, period),
     }
+    if has_perm(user, "sample.view.all") or has_perm(user, "batch.view.all"):
+        charts["batches"] = _batch_decisions(user, window)
     if has_perm(user, "report.performance"):
         work = defaultdict(lambda: {"pending": 0, "overdue": 0})
         for row in waiting_work(user):
@@ -159,6 +217,21 @@ def build(request) -> dict:
             for (name, pk), counts in sorted(work.items())
         ]
 
+    # The richer views: how the period compares with the one before, what is coming, what is waiting, where
+    # failures come from, and whether the equipment is in date.
+    unit, buckets = _span(window, [*received.values_list("received_at", flat=True), *[b for _, b in times],
+                                   *[at for _, at in outcomes]])
+    headline = insights.kpis(window, period, samples, scope_results, unit, buckets, late)
+    deeper = {
+        **headline,
+        "outlook": insights.due_outlook(samples),
+        "ageing": insights.ageing(samples),
+        "failures": insights.failures(scope_results, period, window),
+    }
+    kit = insights.equipment(user)
+    if kit:
+        deeper["equipment"] = kit
+
     return {
         **stamp(request),
         "label": window.label,
@@ -167,4 +240,5 @@ def build(request) -> dict:
         "period": in_period,
         "failures": failures,
         "charts": charts,
+        "insights": deeper,
     }

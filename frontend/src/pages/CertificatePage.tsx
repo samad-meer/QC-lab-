@@ -150,6 +150,7 @@ export default function CertificatePage() {
               reviewStage={cert.awaiting_stage?.order ?? null}
               printed={printed}
               mine={cert.my_turn}
+              names={[undefined, cert.chain[0]?.name_snapshot, ...cert.stages.map((_, i) => cert.chain[i + 1]?.name_snapshot)]}
             />
             {cert.can_sign && (
               <div className="actions-bar" style={{ marginTop: 16, justifyContent: "center" }}>

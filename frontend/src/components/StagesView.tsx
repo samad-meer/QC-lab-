@@ -5,7 +5,7 @@ import SpecManager from "./SpecManager";
 
 const KIND_TEXT: Record<string, string> = {
   NUMBER: "Number", PERCENT: "Percentage", TIME_RANGE: "Start and end time", TIME: "Time", DATE: "Date",
-  TEXT: "Text", YES_NO: "Yes / No", CHOICE: "Choice",
+  TEXT: "Text", YES_NO: "Yes / No", CHOICE: "Choice", FILE: "Photo or file",
 };
 
 function modeLabel(s: QcStagePlanStage): string {

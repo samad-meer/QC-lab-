@@ -103,6 +103,7 @@ class Filter:
     apply: Callable  # (records, value) -> records
     kind: str = "select"  # select, text or toggle
     options: Callable | list | None = None  # (request) -> [(value, label)], for a select
+    blank: str = ""  # what choosing nothing means, if not "All": a report about one person says "Me"
 
 
 @dataclass(frozen=True)
@@ -128,6 +129,10 @@ class Report:
     dates: dict[str, Dates] = {}
     default_period = "all"
     default_sort = ""
+    # False for a report about a person's own work, which is not limited by the samples they can see.
+    sample_scope = True
+    # True when the figures above the list belong on a print too, as a report of someone's week does.
+    print_summary = False
 
     def records(self, request):
         """Everything this person may see in this report: a queryset, or a list of rows."""
@@ -136,6 +141,14 @@ class Report:
     def grouped(self, records):
         """Runs after the filters: a report of batches filters samples, then groups them."""
         return records
+
+    def subject(self, request) -> str:
+        """Whom or what the report is about, if it is about one: said on screen and at the head of a print."""
+        return ""
+
+    def may_export(self, request) -> bool:
+        """Who may download it. A report of someone's own work may be printed by them without more."""
+        return has_perm(request.user, "report.export")
 
     def rows(self, records: list, request) -> list[dict]:
         """One page of records as rows, keyed by column. Work on the page together, not row by row."""
@@ -260,13 +273,13 @@ def select(report: Report, request):
     return _sorted(report, request, report.grouped(records))
 
 
-def stamp(request) -> dict:
+def stamp(request, scoped: bool = True) -> dict:
     """Who produced this, when, and in which time zone — on every report."""
     return {
         "generated_at": text_of(timezone.now()),
         "generated_by": request.user.display_name(),
         "timezone": timezone.get_current_timezone_name(),
-        "partial": not has_perm(request.user, "sample.view.all"),
+        "partial": scoped and not has_perm(request.user, "sample.view.all"),
     }
 
 
@@ -277,6 +290,8 @@ def period_label(report: Report, request) -> str:
 def filters_applied(report: Report, request) -> list[dict]:
     """The filters in force, as a person reads them, for the top of an export."""
     applied = []
+    if report.subject(request):
+        applied.append({"label": "Report for", "value": report.subject(request)})
     if report.dates:
         window = window_of(report, request)
         key = request.query_params.get("date_field") or next(iter(report.dates))
@@ -287,7 +302,7 @@ def filters_applied(report: Report, request) -> list[dict]:
             continue
         labels = {str(v): label for v, label in options_of(flt, request)}
         applied.append({"label": flt.label, "value": "Yes" if flt.kind == "toggle" else labels.get(value, value)})
-    if not has_perm(request.user, "sample.view.all"):
+    if report.sample_scope and not has_perm(request.user, "sample.view.all"):
         applied.append({"label": "Scope", "value": "Only the samples you can see, so this may not be the whole picture"})
     return applied
 
@@ -305,7 +320,7 @@ def definition(report: Report, request, can_export: bool, can_act: bool) -> dict
         ],
         "filters": [
             {
-                "key": f.key, "label": f.label, "kind": f.kind,
+                "key": f.key, "label": f.label, "kind": f.kind, "blank": f.blank,
                 "options": [{"value": str(v), "label": label} for v, label in options_of(f, request)],
             }
             for f in report.filters

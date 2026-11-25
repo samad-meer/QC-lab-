@@ -2,6 +2,8 @@ import { useNavigate } from "react-router-dom";
 import type { SampleListItem } from "../types";
 import type { DateField } from "../useList";
 import { daysUntil, fmtDate } from "../util";
+import MiniJourney from "./MiniJourney";
+import PersonChip from "./PersonChip";
 import { SampleStatusBadge } from "./StatusBadge";
 
 /** The dates any list of samples can be filtered on. */
@@ -20,15 +22,38 @@ function DueCell({ due, done }: { due: string; done: boolean }) {
   );
 }
 
+/** Ticking rows to act on several at once: which rows may be ticked, and which are. */
+export interface SampleSelection {
+  can: (s: SampleListItem) => boolean;
+  selected: Set<number>;
+  onChange: (next: Set<number>) => void;
+  /** Why a row cannot be ticked, read out on hover. */
+  why?: string;
+}
+
 export default function SampleTable({
   samples,
   highlight,
+  selection,
 }: {
   samples: SampleListItem[];
   /** Rows that are waiting for the current user (reviewers: their turn). */
   highlight?: (s: SampleListItem) => boolean;
+  selection?: SampleSelection;
 }) {
   const navigate = useNavigate();
+  const pickable = selection ? samples.filter(selection.can) : [];
+  const allPicked = pickable.length > 0 && pickable.every((s) => selection?.selected.has(s.id));
+  const somePicked = pickable.some((s) => selection?.selected.has(s.id));
+  const toggle = (ids: number[], on: boolean) => {
+    if (!selection) return;
+    const next = new Set(selection.selected);
+    for (const id of ids) {
+      if (on) next.add(id);
+      else next.delete(id);
+    }
+    selection.onChange(next);
+  };
 
   const open = (s: SampleListItem) => {
     // Send the user to the review screen only if it is theirs to act on:
@@ -41,6 +66,16 @@ export default function SampleTable({
       <table className="grid">
         <thead>
           <tr>
+            {selection && (
+              <th className="pick-cell">
+                <input type="checkbox" aria-label="Select every sample on this page that can be assigned"
+                  checked={allPicked} disabled={pickable.length === 0}
+                  ref={(el) => {
+                    if (el) el.indeterminate = somePicked && !allPicked;
+                  }}
+                  onChange={(e) => toggle(pickable.map((s) => s.id), e.target.checked)} />
+              </th>
+            )}
             <th>Sample No</th>
             <th>Product</th>
             <th>Batch / reference</th>
@@ -53,7 +88,7 @@ export default function SampleTable({
           {samples.map((s) => (
             <tr
               key={s.id}
-              className={`clickable ${(highlight ? highlight(s) : s.my_turn) ? "mine" : ""}`}
+              className={`clickable ${(highlight ? highlight(s) : s.my_turn) ? "mine" : ""} ${selection?.selected.has(s.id) ? "picked" : ""}`}
               tabIndex={0}
               onClick={() => open(s)}
               onKeyDown={(e) => {
@@ -63,13 +98,23 @@ export default function SampleTable({
                 }
               }}
             >
+              {selection && (
+                <td className="pick-cell" onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                  {selection.can(s) ? (
+                    <input type="checkbox" aria-label={`Select ${s.sample_no}`} checked={selection.selected.has(s.id)}
+                      onChange={(e) => toggle([s.id], e.target.checked)} />
+                  ) : (
+                    <input type="checkbox" disabled aria-label={`${s.sample_no} cannot be selected`} title={selection.why} />
+                  )}
+                </td>
+              )}
               <td className="num">{s.sample_no}</td>
               <td>
                 <div className="cell-title">{s.product_name}</div>
                 <div className="cell-sub">{s.product_code} · {s.section_code}</div>
               </td>
               <td>{s.batch_label}</td>
-              <td>{s.analyst_name}</td>
+              <td><PersonChip id={s.assigned_analyst_id} name={s.analyst_name} role="Analyst" /></td>
               <td><DueCell due={s.due_date} done={["APPROVED", "REJECTED", "CANCELLED"].includes(s.status)} /></td>
               <td>
                 <SampleStatusBadge
@@ -84,6 +129,7 @@ export default function SampleTable({
                 {s.has_failures && !["APPROVED", "REJECTED", "CANCELLED"].includes(s.status) && (
                   <> <span className="badge fail">OOS</span></>
                 )}
+                <div className="cell-journey"><MiniJourney s={s} /></div>
               </td>
             </tr>
           ))}

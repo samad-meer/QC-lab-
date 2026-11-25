@@ -16,7 +16,7 @@ const LEFT = 34;
 const TOP = 14;
 const BOTTOM = 26;
 
-function useWidth() {
+export function useWidth() {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(640);
   useEffect(() => {
@@ -29,7 +29,7 @@ function useWidth() {
   return { ref, width };
 }
 
-function dayLabel(date: string, unit: string) {
+export function dayLabel(date: string, unit: string) {
   const day = new Date(`${date}T00:00:00`);
   return unit === "month"
     ? day.toLocaleDateString("en-GB", { month: "short", year: "numeric" })
@@ -37,19 +37,19 @@ function dayLabel(date: string, unit: string) {
 }
 
 /** A round, even top for the axis, so that the tick halfway up is a whole number too. */
-function niceMax(value: number) {
+export function niceMax(value: number) {
   if (value <= 4) return 4;
   const step = 10 ** Math.floor(Math.log10(value));
   const nice = [1, 2, 3, 4, 5, 6, 8, 10].map((n) => n * step).find((n) => n >= value && n % 2 === 0);
   return nice ?? value;
 }
 
-function compact(value: number) {
+export function compact(value: number) {
   return value >= 1000 ? `${value / 1000}K` : String(value);
 }
 
 /** One tooltip per chart, kept inside the plot. Series keys are short lines, values lead. */
-function Tooltip({ x, width, title, rows }: {
+export function Tooltip({ x, width, title, rows }: {
   x: number;
   width: number;
   title: string;
@@ -70,7 +70,7 @@ function Tooltip({ x, width, title, rows }: {
   );
 }
 
-function Details({ children }: { children: ReactNode }) {
+export function Details({ children }: { children: ReactNode }) {
   return (
     <details className="chart-table">
       <summary>Show as a table</summary>

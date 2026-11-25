@@ -408,7 +408,7 @@ export default function Roles() {
         </p>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "290px 1fr", gap: 16, alignItems: "start" }}>
+      <div className="side-by-side">
         <div className="card" style={{ margin: 0 }}>
           <div className="card-head">
             <h2>Roles</h2>

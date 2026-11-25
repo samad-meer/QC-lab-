@@ -41,7 +41,7 @@ export default function BatchNumbering() {
         <span className="hint">The official batch number is never generated or changed</span>
       </div>
       <div className="card-body stack">
-        <div className="form-row" style={{ gridTemplateColumns: "1fr 1fr 1fr" }}>
+        <div className="form-row three">
           <Field label="Prefix" required>
             <input value={rule.prefix} onChange={(e) => set({ prefix: e.target.value })} />
           </Field>

@@ -17,6 +17,9 @@ export default defineConfig(({ mode }) => {
     plugins: [react()],
     server: {
       host: lan ? true : undefined,
+      // Compile the screens in the background as the server starts. Without this the first page after
+      // every start waits while ~130 files are compiled one request at a time (3 to 9 seconds here).
+      warmup: { clientFiles: ["./src/main.tsx", "./src/App.tsx", "./src/pages/**/*.tsx", "./src/components/**/*.tsx"] },
       proxy: {
         "/api": BACKEND,
         "/verify": BACKEND,

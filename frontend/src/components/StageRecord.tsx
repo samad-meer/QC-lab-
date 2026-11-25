@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { apiPost } from "../api";
-import type { BatchDetail, BatchStageRecord, CheckpointKind, RecordColumn, RecordEntry, RecordFlag } from "../types";
-import { fmtDate, nowLocalInput, todayInput, toLocalInput } from "../util";
+import { apiPost, apiUpload } from "../api";
+import type {
+  BatchDetail, BatchStageRecord, CheckpointKind, RecordColumn, RecordEntry, RecordFile, RecordFlag,
+} from "../types";
+import { fmtDate, fmtSize, nowLocalInput, todayInput, toLocalInput } from "../util";
 import CommentModal from "./CommentModal";
 import { Message } from "./Feedback";
 import Stamp from "./Stamp";
@@ -18,11 +20,15 @@ interface Typed {
   start: string;
   end: string;
   yes_no: "" | "yes" | "no";
+  /** A photo or file chosen but not saved yet. */
+  file: File | null;
   reason: string;
   correction: string;
 }
 
 const NUMERIC: CheckpointKind[] = ["NUMBER", "PERCENT"];
+/** The most a photo or file may weigh; the server holds to the same figure. */
+const FILE_LIMIT_MB = 10;
 
 function fromEntry(e: RecordEntry | null): Typed {
   return {
@@ -32,6 +38,7 @@ function fromEntry(e: RecordEntry | null): Typed {
     start: e?.start ? toLocalInput(e.start) : "",
     end: e?.end ? toLocalInput(e.end) : "",
     yes_no: e?.yes_no === true ? "yes" : e?.yes_no === false ? "no" : "",
+    file: null,
     reason: e?.reason ?? "",
     correction: "",
   };
@@ -51,7 +58,22 @@ function valueOf(kind: CheckpointKind, t: Typed): string {
     case "TEXT": return t.text.trim();
     case "CHOICE": return t.text;
     case "YES_NO": return t.yes_no;
+    case "FILE": return t.file ? `${t.file.name}:${t.file.size}:${t.file.lastModified}` : "";
   }
+}
+
+/** A photo as a small picture that opens in full, or a PDF as a link: what the record keeps. */
+function FileView({ file }: { file: RecordFile }) {
+  return file.image ? (
+    <a className="rec-photo-link" href={file.url} target="_blank" rel="noreferrer" title="Open the photo in full">
+      <img className="rec-photo" src={file.url} alt={file.name} loading="lazy" />
+      <span className="cell-sub">{file.name} · {fmtSize(file.size)}</span>
+    </a>
+  ) : (
+    <a className="rec-file-link" href={file.url} target="_blank" rel="noreferrer">
+      {file.name} <span className="cell-sub">· PDF, {fmtSize(file.size)}</span>
+    </a>
+  );
 }
 
 function outside(p: Point, t: Typed): boolean {
@@ -62,7 +84,12 @@ function outside(p: Point, t: Typed): boolean {
   return (p.min_value !== null && n < Number(p.min_value)) || (p.max_value !== null && n > Number(p.max_value));
 }
 
-function ValueInput({ p, t, set }: { p: Point; t: Typed; set: (patch: Partial<Typed>) => void }) {
+function ValueInput({ p, t, set, refuse }: {
+  p: Point;
+  t: Typed;
+  set: (patch: Partial<Typed>) => void;
+  refuse: (text: string) => void;
+}) {
   const id = `cp-${p.id}`;
   switch (p.kind) {
     case "NUMBER":
@@ -115,6 +142,23 @@ function ValueInput({ p, t, set }: { p: Point; t: Typed; set: (patch: Partial<Ty
               onClick={() => set({ yes_no: v })}>{v === "yes" ? "Yes" : "No"}</button>
           ))}
         </div>
+      );
+    case "FILE":
+      return (
+        <span className="rec-file">
+          {/* Remounted once saved, so the box does not go on showing the file that is now on the record. */}
+          <input key={p.entry?.id ?? "new"} id={id} type="file" accept="image/*,.pdf,application/pdf" aria-label={p.label}
+            onChange={(e) => {
+              const chosen = e.target.files?.[0] ?? null;
+              if (chosen && chosen.size > FILE_LIMIT_MB * 1024 * 1024) {
+                e.target.value = "";
+                refuse(`“${p.label}”: that file is ${fmtSize(chosen.size)}. The limit is ${FILE_LIMIT_MB} MB.`);
+                return;
+              }
+              set({ file: chosen });
+            }} />
+          {t.file && <span className="cell-sub">{t.file.name} · {fmtSize(t.file.size)}, not saved yet</span>}
+        </span>
       );
   }
 }
@@ -242,10 +286,21 @@ export default function StageRecord({ batch, stageId, record, onChange }: {
           : p.kind === "TIME" ? { start: t.start }
           : p.kind === "DATE" ? { date: t.date }
           : p.kind === "YES_NO" ? { yes_no: t.yes_no === "yes" }
+          : p.kind === "FILE" ? {}
           : { text: t.text };
         return { checkpoint_id: p.id, ...value, reason: t.reason, correction: t.correction };
       });
-      onChange(await apiPost<BatchDetail>(`/api/batches/${batch.id}/qc-stages/${stageId}/entries/`, { entries }));
+      const url = `/api/batches/${batch.id}/qc-stages/${stageId}/entries/`;
+      const files = dirty.filter((p) => p.kind === "FILE" && typed[p.id].file);
+      if (files.length) {
+        // Photos and files travel as a form: the values as text, each file beside them.
+        const form = new FormData();
+        form.set("entries", JSON.stringify(entries));
+        for (const p of files) form.set(`file_${p.id}`, typed[p.id].file as File);
+        onChange(await apiUpload<BatchDetail>(url, form));
+      } else {
+        onChange(await apiPost<BatchDetail>(url, { entries }));
+      }
       // Say what was saved, by name, and where.
       const names = dirty.map((p) => p.label);
       const listed = names.length <= 3 ? names.join(", ") : `${names.slice(0, 3).join(", ")} and ${names.length - 3} more`;
@@ -317,12 +372,14 @@ export default function StageRecord({ batch, stageId, record, onChange }: {
                       </div>
                       <div className="rec-value">
                         {fill ? (
-                          <ValueInput p={p} t={t} set={(patch) => set(p.id, patch)} />
+                          <ValueInput p={p} t={t} set={(patch) => set(p.id, patch)}
+                            refuse={(text) => { setError({ step: record.per_step ? step.id : null, text }); toast("error", "Not attached", text); }} />
                         ) : p.entry ? (
-                          <span className="rec-shown">{p.entry.shown}</span>
+                          p.entry.file ? <FileView file={p.entry.file} /> : <span className="rec-shown">{p.entry.shown}</span>
                         ) : (
                           <span className="cell-sub">Not written</span>
                         )}
+                        {fill && p.entry?.file && <FileView file={p.entry.file} />}
                         {flagged && <span className="badge fail">Out of limit</span>}
                         {fill && flagged && (
                           <input className="rec-why" id={`why-${p.id}`} value={t.reason} maxLength={500}
@@ -355,7 +412,9 @@ export default function StageRecord({ batch, stageId, record, onChange }: {
                                 <ul>
                                   {[p.entry, ...p.history].map((h, i, all) => (
                                     <li key={h.id}>
-                                      <b>{h.shown}</b> · {h.entered_by?.name}, <Stamp at={h.entered_at} />
+                                      {h.file
+                                        ? <a href={h.file.url} target="_blank" rel="noreferrer"><b>{h.shown}</b></a>
+                                        : <b>{h.shown}</b>} · {h.entered_by?.name}, <Stamp at={h.entered_at} />
                                       {i < all.length - 1 && all[i].correction && <span className="rec-quote"> “{all[i].correction}”</span>}
                                     </li>
                                   ))}

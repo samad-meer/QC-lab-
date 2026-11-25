@@ -35,6 +35,9 @@ def load_settings():
 def serve():
     from waitress import serve as waitress_serve
 
+    # Tells the app it is serving requests, so it starts its background worker (alerts and email).
+    # Set before the application loads. A migration or a shell run through this file does not start it.
+    os.environ["QCLAB_SERVING"] = "1"
     from qclab.wsgi import application
 
     # Waitress drops forwarded headers unless it is told who to believe. Only

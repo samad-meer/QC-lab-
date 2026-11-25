@@ -65,7 +65,7 @@ function ReportBody({ def }: { def: ReportDefinition }) {
 
       <ListCard
         title={list.loaded ? `${list.count} ${list.count === 1 ? "record" : "records"}` : "Records"}
-        hint={extra?.period}
+        hint={[extra?.subject && `Report for ${extra.subject}`, extra?.period].filter(Boolean).join(" · ")}
         list={list}
         failure={`Could not load ${def.title}`}
         emptyTitle="Nothing matches"
@@ -110,7 +110,7 @@ function ReportBody({ def }: { def: ReportDefinition }) {
                       <label className="field" key={f.key}>
                         {f.label}
                         <select value={value} onChange={(e) => setFilters({ [f.key]: e.target.value })}>
-                          <option value="">All</option>
+                          <option value="">{f.blank || "All"}</option>
                           {f.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                         </select>
                       </label>

@@ -19,6 +19,8 @@ apply to one batch, before anything is done for it, and can add a stage to one
 batch alone; both are signed, with a reason, and the product's stages never
 change. A batch is released only when every required stage that applies has passed.
 """
+from typing import NamedTuple
+
 from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
@@ -708,6 +710,17 @@ def sign_blocker(batch: Batch, row: dict, signoff, user, act: bool = False, step
     return ""
 
 
+class _Write(NamedTuple):
+    """One value about to be written: the check point, the value, whether it is out of limit, and why."""
+
+    cp: object
+    full: dict
+    flagged: bool
+    reason: str
+    correction: str
+    upload: dict | None  # the photo or file that goes with it, if the check point takes one
+
+
 def save_entries(batch: Batch, stage_id, by, items) -> list[BatchCheckpointEntry]:
     """
     Values written on a stage of the batch record. Each one is a new entry: a value
@@ -736,8 +749,11 @@ def save_entries(batch: Batch, stage_id, by, items) -> list[BatchCheckpointEntry
         value = parse_value(cp, item)
         if value is None:
             continue
+        upload = value.pop("file", None)  # a photo or file travels beside the typed values
         full = {**dict.fromkeys(("number", "date", "start", "end", "yes_no")), "text": "", **value}
-        if latest is not None and fields_of(latest) == full:
+        # The same file again is no change, whatever it is called now.
+        if latest is not None and (latest.sha256 == upload["sha256"] if upload is not None
+                                   else fields_of(latest) == full):
             continue
         flagged = outside(cp, full)
         reason = str(item.get("reason") or "").strip()[:500]
@@ -749,25 +765,32 @@ def save_entries(batch: Batch, stage_id, by, items) -> list[BatchCheckpointEntry
         correction = str(item.get("correction") or "").strip()[:500]
         if latest is not None and not correction:
             raise StageError(f"“{cp.label}” already reads {shown(cp, fields_of(latest))}. Say why it is being changed.")
-        writes.append((cp, full, flagged, reason if flagged else "", correction if latest is not None else ""))
+        writes.append(_Write(cp, full, flagged, reason if flagged else "", correction if latest is not None else "",
+                             upload))
     if not writes:
         return []
     with transaction.atomic():
         batch = _still_open(batch)
         made = [
             BatchCheckpointEntry.objects.create(
-                batch=batch, checkpoint=cp, out_of_limit=flagged, reason=reason, correction=correction,
-                entered_by=by, **{k: v for k, v in full.items() if k != "text"}, text=full["text"],
+                batch=batch, checkpoint=w.cp, out_of_limit=w.flagged, reason=w.reason, correction=w.correction,
+                entered_by=by, **{k: v for k, v in w.full.items() if k != "text"}, text=w.full["text"],
+                **({"file": w.upload["upload"], "extension": w.upload["extension"],
+                    "content_type": w.upload["content_type"], "size": w.upload["size"], "sha256": w.upload["sha256"]}
+                   if w.upload is not None else {}),
             )
-            for cp, full, flagged, reason, correction in writes
+            for w in writes
         ]
         record(by, "BATCH_RECORD_WRITTEN", "batch", batch.internal_id, stage=stage.name,
-               values=[f"{cp.label}: {shown(cp, full)}" for cp, full, *_ in writes],
-               summary="; ".join(f"{cp.label} {shown(cp, full)}" for cp, full, *_ in writes),
-               **({"out_of_limit": [f"{cp.label}: {reason}" for cp, _, flagged, reason, _ in writes if flagged]}
-                  if any(w[2] for w in writes) else {}),
-               **({"corrections": [f"{cp.label}: {c}" for cp, *_, c in writes if c]}
-                  if any(w[4] for w in writes) else {}))
+               values=[f"{w.cp.label}: {shown(w.cp, w.full)}" for w in writes],
+               summary="; ".join(f"{w.cp.label} {shown(w.cp, w.full)}" for w in writes),
+               **({"out_of_limit": [f"{w.cp.label}: {w.reason}" for w in writes if w.flagged]}
+                  if any(w.flagged for w in writes) else {}),
+               **({"corrections": [f"{w.cp.label}: {w.correction}" for w in writes if w.correction]}
+                  if any(w.correction for w in writes) else {}),
+               **({"files": [f"{w.cp.label}: {w.full['text']} ({w.upload['size']} bytes, sha256 {w.upload['sha256']})"
+                             for w in writes if w.upload is not None]}
+                  if any(w.upload is not None for w in writes) else {}))
     return made
 
 
@@ -914,11 +937,28 @@ def assigned_work(user) -> list[dict]:
     list: values to write, or their column to sign. Gone once they have signed it
     everywhere, or the stage is reassigned, or the batch is decided.
     """
-    pairs = BatchStageAssignment.objects.filter(assignee=user).values_list("batch_id", "stage_id").distinct()
+    return open_stage_work(only=user)
+
+
+def open_stage_work(only=None, batches=None) -> list[dict]:
+    """
+    The same, for the team: every recorded stage someone has been named to fill and sign
+    that still needs them. `only` keeps one person's, and `batches` (a queryset) keeps the
+    stages of those batches, so a screen shows no more than its viewer may see.
+    """
+    named = BatchStageAssignment.objects.all()
+    if only is not None:
+        named = named.filter(assignee=only)
+    if batches is not None:
+        named = named.filter(batch__in=batches)
+    # order_by() clears the model's default order, which would add the row's id to what is
+    # compared and list a stage once for every time it was assigned.
+    pairs = named.order_by().values_list("batch_id", "stage_id").distinct()
     work, rows_of = [], {}
     for batch_id, stage_id in pairs:
-        latest = BatchStageAssignment.objects.filter(batch_id=batch_id, stage_id=stage_id).order_by("-id").first()
-        if latest is None or latest.assignee_id != user.pk:
+        latest = (BatchStageAssignment.objects.filter(batch_id=batch_id, stage_id=stage_id)
+                  .select_related("assignee", "assigned_by").order_by("-id").first())
+        if latest is None or latest.assignee_id is None or (only is not None and latest.assignee_id != only.pk):
             continue
         batch = Batch.objects.select_related("product").get(pk=batch_id)
         if final_decision(batch):

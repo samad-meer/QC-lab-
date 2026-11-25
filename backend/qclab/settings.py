@@ -91,6 +91,14 @@ DATABASES = {
         "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
         "HOST": os.environ.get("POSTGRES_HOST", "127.0.0.1"),
         "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+        # Opening a PostgreSQL connection takes 60 to 300 ms on Windows, and without a pool every
+        # request opens one, so a page that makes six calls pays it six times before any work is done.
+        # A pool keeps connections open and hands them out in under a millisecond. It also works with
+        # the development server, which starts a new thread for every request and so cannot use
+        # CONN_MAX_AGE. 16 covers waitress's 8 threads and a browser's parallel calls; a request
+        # waits for a free one rather than failing. QCLAB_DB_POOL=0 turns it off.
+        "OPTIONS": ({"pool": {"min_size": 2, "max_size": 16, "timeout": 20}}
+                    if os.environ.get("QCLAB_DB_POOL", "1") == "1" else {}),
         # On Windows the default template is usually WIN1252, which refuses
         # characters the app stores, such as the arrow in a workflow name.
         "TEST": {"CHARSET": "UTF8", "TEMPLATE": "template0"},

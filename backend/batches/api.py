@@ -3,6 +3,8 @@ Batch endpoints: the list, one batch with everything that hangs off it
 (its samples, results, certificates, documents and history), the document
 store, and the numbering rule.
 """
+import json
+
 from django.db.models import Count
 from django.http import Http404
 from django.shortcuts import get_object_or_404
@@ -27,8 +29,8 @@ from qclab.listing import filter_by_date, filter_by_text, paginated
 from reports.list_export import Col, ListExport
 from . import services, stages
 from .models import (
-    Batch, BatchDocument, BatchNumberRule, CheckpointKind, CheckpointPreset, DispositionDecision, DocumentType,
-    QcStagePlan, StageKind,
+    Batch, BatchCheckpointEntry, BatchDocument, BatchNumberRule, CheckpointKind, CheckpointPreset,
+    DispositionDecision, DocumentType, QcStagePlan, StageKind,
 )
 from .records import clean_kind, fields_of, shown
 from .numbering import build_id, clean_rule
@@ -36,6 +38,7 @@ from .services import BatchError
 from .stages import StageError
 
 BATCH_DATES = {"registered": "created_at", "manufactured": "manufacturing_date", "expiry": "expiry_date"}
+IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 
 
 def _progress_text(b: Batch) -> str:
@@ -243,6 +246,11 @@ def _entry(cp, e) -> dict | None:
         "number": None if e.number is None else format(e.number.normalize(), "f"),
         "text": e.text, "date": e.date, "start": e.start, "end": e.end, "yes_no": e.yes_no,
         "shown": shown(cp, value),
+        # A photo or file: where to fetch it, and whether the screen can show it as a picture.
+        "file": None if not e.file else {
+            "url": f"/api/batch-record-files/{e.id}/", "name": e.text, "type": e.content_type, "size": e.size,
+            "image": e.extension in IMAGE_EXTENSIONS,
+        },
         "out_of_limit": e.out_of_limit, "reason": e.reason, "correction": e.correction,
         "entered_by": person(e.entered_by), "entered_at": e.entered_at,
     }
@@ -553,15 +561,45 @@ def add_stage(request, pk):
     return _detail(request, _visible(request, batch.pk))
 
 
+def _entries_sent(request):
+    """
+    The values sent for a stage. Plain values come as JSON. With photos or files they come as a
+    form: the values as JSON text in `entries`, and each file beside them as file_<check point id>.
+    """
+    entries = request.data.get("entries")
+    if isinstance(entries, str):
+        try:
+            entries = json.loads(entries)
+        except ValueError:
+            raise StageError("The values could not be read. Reload the page and try again.") from None
+    if isinstance(entries, list):
+        for item in entries:
+            if isinstance(item, dict):
+                item.pop("file", None)  # a file is only ever what was uploaded, never something typed in
+                upload = request.FILES.get(f"file_{item.get('checkpoint_id')}")
+                if upload is not None:
+                    item["file"] = upload
+    return entries
+
+
 @api_view(["POST"])
 def stage_entries(request, pk, stage_id):
     """Values written on a recorded stage of the batch record."""
     batch = _visible(request, pk)
     try:
-        stages.save_entries(batch, stage_id, request.user, request.data.get("entries"))
+        stages.save_entries(batch, stage_id, request.user, _entries_sent(request))
     except StageError as e:
         return _bad(str(e))
     return _detail(request, _visible(request, batch.pk))
+
+
+@api_view(["GET"])
+def record_file(request, pk):
+    """A photo or file on a batch record: served only here, to people who can see the batch."""
+    entry = get_object_or_404(BatchCheckpointEntry.objects.exclude(file=""), pk=pk)
+    _visible(request, entry.batch_id)
+    return private_file_response(entry.file, entry.extension, entry.content_type, entry.text,
+                                 download=request.query_params.get("download") == "1")
 
 
 @api_view(["POST"])
@@ -669,6 +707,57 @@ def checkpoint_preset_detail(request, pk):
         record(request.user, "CHECKPOINT_KIND_CHANGED", "checkpoint kind", kind.name,
                was={k: before[k] for k in changed}, **changed)
     return Response(after)
+
+
+@api_view(["GET"])
+@permission_classes([RequiresPermission.of("product.manage")])
+def checkpoint_kinds_in_use(request):
+    """
+    The kinds of value the products' current stages already ask for, shown beside the
+    lab's own kinds: check points that share a kind, unit, limits and options are one
+    row, with their names and where they are used, so a row can be saved as a kind
+    and offered ready filled in from then on.
+    """
+    from .models import QcCheckpoint
+
+    # Each product's current version of its stages: the one a batch created now gets.
+    latest: dict[int, tuple[int, int]] = {}
+    for pk, product_id, version in QcStagePlan.objects.values_list("pk", "product_id", "version"):
+        if product_id not in latest or version > latest[product_id][1]:
+            latest[product_id] = (pk, version)
+    points = (
+        QcCheckpoint.objects.filter(step__stage__plan_id__in=[pk for pk, _ in latest.values()])
+        .select_related("step__stage__plan__product")
+        .order_by("step__stage__plan__product__name", "step__stage__order", "step__order", "order")
+    )
+    groups: dict[tuple, dict] = {}
+    for c in points:
+        numeric = c.kind in (CheckpointKind.NUMBER, CheckpointKind.PERCENT)
+        key = (c.kind, c.unit.strip() if c.kind == CheckpointKind.NUMBER else "",
+               c.min_value if numeric else None, c.max_value if numeric else None, c.decimals if numeric else None,
+               json.dumps(c.choices, sort_keys=True) if c.kind == CheckpointKind.CHOICE else "")
+        g = groups.get(key)
+        if g is None:
+            g = groups[key] = {
+                "kind": c.kind, "kind_label": c.get_kind_display(), "kind_names": [],
+                "unit": key[1], "min_value": _number(c.min_value) if numeric else None,
+                "max_value": _number(c.max_value) if numeric else None, "decimals": c.decimals,
+                "choices": c.choices if c.kind == CheckpointKind.CHOICE else [],
+                "labels": [], "uses": 0, "used_in": [],
+            }
+        g["uses"] += 1
+        label = " ".join(c.label.split())
+        if label.lower() not in (x.lower() for x in g["labels"]):
+            g["labels"].append(label)
+        if c.kind_name and c.kind_name not in g["kind_names"]:
+            g["kind_names"].append(c.kind_name)
+        product, stage = c.step.stage.plan.product, c.step.stage
+        place = {"product_id": product.id, "product": product.name, "stage": stage.name}
+        if place not in g["used_in"]:
+            g["used_in"].append(place)
+    # In the order the built-in list has them, the most used first within each.
+    order = {k.value: i for i, k in enumerate(CheckpointKind)}
+    return Response(sorted(groups.values(), key=lambda g: (order[g["kind"]], -g["uses"])))
 
 
 def _product_stages(request, product) -> Response:

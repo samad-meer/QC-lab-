@@ -2,43 +2,20 @@ import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet, apiPoll } from "../api";
 import { LAB_REGISTER_VIEWS, useAuth } from "../auth";
+import { DonutChart } from "../components/Charts";
+import type { DonutSlice } from "../components/Charts";
 import { Message } from "../components/Feedback";
+import LabGlance from "../components/LabGlance";
+import type { GlancePeriod } from "../components/LabGlance";
+import LineIcon from "../components/LineIcon";
+import type { IconName } from "../components/LineIcon";
 import { NotificationList, useNotifications } from "../components/Notifications";
 import { TimelineChart } from "../components/reports/LineCharts";
 import Stamp from "../components/Stamp";
 import type { BatchRow, BatchStageTask, Page, ReportDashboard, Summary, TaskBucket, Tasks } from "../types";
 import { fmtNow } from "../util";
 
-/** Line icons on a 24 grid, drawn like the rest of the app's. */
-const ICONS = {
-  inbox: "M22 12h-6l-2 3h-4l-2-3H2M5.5 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.5-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.7 1.1z",
-  handoff: "M5 12h14M13 6l6 6-6 6",
-  back: "M9 14 4 9l5-5M4 9h11a5 5 0 0 1 0 10h-1",
-  sign: "M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z",
-  flask: "M9 3h6M10 3v6l-5.5 9.5A1.5 1.5 0 0 0 5.8 21h12.4a1.5 1.5 0 0 0 1.3-2.5L14 9V3",
-  retest: "M21 4v6h-6M3 20v-6h6M5.5 9a8 8 0 0 1 13.2-3L21 10M3 14l2.3 4A8 8 0 0 0 18.5 15",
-  people: "M16 19c0-2.8-1.8-5-4-5s-4 2.2-4 5M12 11a3 3 0 1 0 0-6 3 3 0 0 0 0 6M20 18c0-2-1-3.6-2.5-4.4M17 5.2a3 3 0 0 1 0 5.6",
-  record: "M9 4h6a1 1 0 0 1 1 1v1H8V5a1 1 0 0 1 1-1M8 6H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-2M9 13h6M9 17h4",
-  list: "M8 6h12M8 12h12M8 18h12M4 6h.01M4 12h.01M4 18h.01",
-  box: "M21 8l-9-5-9 5 9 5 9-5M3 8v8l9 5 9-5V8M12 13v8",
-  book: "M4 19.5A2.5 2.5 0 0 1 6.5 17H20M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2",
-  chart: "M4 20V10M10 20V4M16 20v-7M22 20H2",
-  flow: "M6 3v12M18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6M6 21a3 3 0 1 0 0-6 3 3 0 0 0 0 6M18 9a9 9 0 0 1-9 9",
-  door: "M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3",
-  check: "M20 6 9 17l-5-5",
-  alert: "M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0",
-  bell: "M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9M13.7 21a2 2 0 0 1-3.4 0",
-};
-type IconName = keyof typeof ICONS;
-
-function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
-  return (
-    <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke="currentColor" strokeWidth="2"
-      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={ICONS[name]} />
-    </svg>
-  );
-}
+const Icon = LineIcon;
 
 /** What can be waiting on someone, worded as the Tasks page words it. */
 const WAITING: { key: TaskBucket; title: string; hint: string; tone: "hot" | "fail" | "info"; icon: IconName }[] = [
@@ -87,6 +64,21 @@ function stageWork(w: BatchStageTask): string {
   return `Waits for ${w.waiting_for.join(", ")}`;
 }
 
+/** A card still on its way: its place is held, so the page does not jump or look half empty. */
+function LoadingCard({ title, chart = false }: { title: string; chart?: boolean }) {
+  return (
+    <section className="card dash2-loading" aria-label={title} aria-busy="true">
+      <div className="card-head"><h2>{title}</h2></div>
+      <div className="card-body">
+        <div className="sk" style={{ width: "72%" }} />
+        <div className="sk" style={{ width: "54%" }} />
+        <div className="sk" style={{ width: "63%" }} />
+        {chart && <div className="sk dash2-loading-chart" />}
+      </div>
+    </section>
+  );
+}
+
 /**
  * The start page: what is waiting on you today, how the lab is doing this
  * month, where unfinished samples and recent batches stand, and your latest
@@ -97,10 +89,14 @@ export default function Dashboard() {
   const { data: notes, markAll } = useNotifications();
   const [tasks, setTasks] = useState<Tasks | null>(null);
   const [summary, setSummary] = useState<Summary | null>(null);
-  const [month, setMonth] = useState<ReportDashboard | null>(null);
-  const [batches, setBatches] = useState<BatchRow[] | null>(null);
+  // undefined while on the way; null when it could not be had, and the card then stays away.
+  const [month, setMonth] = useState<ReportDashboard | null | undefined>(undefined);
+  const [batches, setBatches] = useState<BatchRow[] | null | undefined>(undefined);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => new Date());
+  const [period, setPeriod] = useState<GlancePeriod>("month");
+  // Another period has been asked for and its figures have not come yet.
+  const [glanceBusy, setGlanceBusy] = useState(false);
 
   const fills = can("batch.record.fill");
   // Production fills batch records and never works on samples: sample counts would all read 0.
@@ -119,11 +115,13 @@ export default function Dashboard() {
       if (!quietly) setError(err instanceof Error ? err.message : "Could not load the dashboard.");
     }
     // The extras never block the page: each shows when it arrives, or not at all.
-    if (overview) get<ReportDashboard>("/api/reports/dashboard/?period=month").then(setMonth).catch(() => undefined);
+    // A failed refresh keeps what was shown; a failed first load lets the placeholder go.
     if (seesBatches) {
-      get<Page<BatchRow>>("/api/batches/?page_size=5").then((p) => setBatches(p.results)).catch(() => undefined);
+      get<Page<BatchRow>>("/api/batches/?page_size=5")
+        .then((p) => setBatches(p.results))
+        .catch(() => setBatches((b) => b ?? null));
     }
-  }, [overview, seesBatches]);
+  }, [seesBatches]);
 
   useEffect(() => {
     void load();
@@ -134,6 +132,25 @@ export default function Dashboard() {
       window.clearInterval(tick);
     };
   }, [load]);
+
+  // What the charts show depends on the period chosen, so they load and refresh on their own: picking
+  // another period must not reload the tasks too, and the chosen period's answer must be the one shown.
+  useEffect(() => {
+    if (!overview) return undefined;
+    let current = true;
+    const fetchGlance = (quietly: boolean) => {
+      const get = quietly ? apiPoll : apiGet;
+      get<ReportDashboard>(`/api/reports/dashboard/?period=${period}`)
+        .then((d) => { if (current) { setMonth(d); setGlanceBusy(false); } })
+        .catch(() => { if (current) { setMonth((m) => m ?? null); setGlanceBusy(false); } });
+    };
+    fetchGlance(false);
+    const refresh = window.setInterval(() => fetchGlance(true), REFRESH_MS);
+    return () => {
+      current = false;
+      window.clearInterval(refresh);
+    };
+  }, [overview, period]);
 
   if (!user) return null;
   const first = firstName(user.name);
@@ -146,6 +163,7 @@ export default function Dashboard() {
 
   const shortcuts = [
     can("sample.register") && { to: "/frontdesk", label: "Receive a sample", icon: "inbox" as IconName },
+    can("sample.assign") && { to: "/assign", label: "Assign work", icon: "people" as IconName },
     can("result.enter") && { to: "/worklist", label: "My worklist", icon: "flask" as IconName },
     user.is_reviewer && { to: "/queue", label: "Awaiting my signature", icon: "sign" as IconName },
     can("sample.view.all") && { to: "/samples", label: "All samples", icon: "list" as IconName },
@@ -157,6 +175,12 @@ export default function Dashboard() {
   ].filter((x): x is { to: string; label: string; icon: IconName } => Boolean(x));
 
   const inProgress = summary ? STAGES.reduce((sum, st) => sum + (summary.by_status[st.key] ?? 0), 0) : 0;
+  const inProgressSlices: DonutSlice[] = summary
+    ? STAGES.map((st) => ({
+      label: st.label, value: summary.by_status[st.key] ?? 0, color: st.color,
+      to: can("sample.view.all") ? `/samples?status=${st.key}` : "/tasks",
+    }))
+    : [];
 
   return (
     <>
@@ -239,6 +263,9 @@ export default function Dashboard() {
         </div>
       </section>
 
+      {overview && month === undefined && <LoadingCard title="Lab at a glance" chart />}
+      {overview && month && <LabGlance data={month} period={period} busy={glanceBusy} onPeriod={(next) => { setGlanceBusy(true); setPeriod(next); }} />}
+
       <div className="dash2-grid">
         <div className="dash2-col">
           {fills && batchWork.length > 0 && (
@@ -267,10 +294,11 @@ export default function Dashboard() {
             </section>
           )}
 
+          {overview && month === undefined && <LoadingCard title="In the lab" chart />}
           {overview && month && (
             <section className="card" aria-label="This month">
               <div className="card-head">
-                <h2>This month in the lab</h2>
+                <h2>{month.label} in the lab</h2>
                 <span className="hint">{month.label} · {month.scope}</span>
                 <div className="spacer" />
                 <Link to="/reports" className="btn-link">Reports →</Link>
@@ -310,6 +338,7 @@ export default function Dashboard() {
             </section>
           )}
 
+          {seesBatches && batches === undefined && <LoadingCard title="Recent batches" />}
           {seesBatches && batches && (
             <section className="card" aria-label="Recent batches">
               <div className="card-head">
@@ -367,22 +396,9 @@ export default function Dashboard() {
                   <div className="dash2-pipe sk" />
                 ) : (
                   <>
-                    <div className="dash2-pipe" role="img"
-                      aria-label={STAGES.map((st) => `${summary.by_status[st.key] ?? 0} ${st.label.toLowerCase()}`).join(", ")}>
-                      {inProgress === 0 ? <span className="dash2-pipe-empty" /> : STAGES.map((st) => {
-                        const n = summary.by_status[st.key] ?? 0;
-                        return n > 0 && (
-                          <span key={st.key} style={{ flexGrow: n, background: st.color }} title={`${st.label}: ${n}`} />
-                        );
-                      })}
-                    </div>
+                    <DonutChart name="Samples in progress" slices={inProgressSlices} centerValue={inProgress} centerLabel="in progress"
+                      emptyText="Nothing is in progress." />
                     <div className="dash2-stats">
-                      {STAGES.map((st) => (
-                        <Link key={st.key} to={can("sample.view.all") ? `/samples?status=${st.key}` : "/tasks"} className="dash-stat">
-                          <b>{summary.by_status[st.key] ?? 0}</b>
-                          <span><i style={{ background: st.color }} />{st.label}</span>
-                        </Link>
-                      ))}
                       <Link to={can("sample.view.all") ? "/samples?status=APPROVED" : "/tasks"} className="dash-stat">
                         <b>{summary.by_status.APPROVED ?? 0}</b>
                         <span><i style={{ background: "var(--pass)" }} />Approved</span>

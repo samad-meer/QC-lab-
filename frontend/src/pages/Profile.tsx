@@ -180,10 +180,7 @@ export default function Profile() {
         <div className="card-head">
           <h2>Identity</h2>
         </div>
-        <div
-          className="card-body"
-          style={{ display: "grid", gridTemplateColumns: "220px 1fr", gap: 26 }}
-        >
+        <div className="card-body side-by-side narrow">
           <PhotoPanel profile={profile} onChanged={apply} />
 
           <div style={{ display: "grid", gap: 20, alignContent: "start" }}>
