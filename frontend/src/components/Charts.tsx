@@ -294,3 +294,101 @@ export function WorkloadBars({
     </div>
   );
 }
+
+const PIE_R = 90;
+
+/** One slice of the pie, from `start` to `end` as shares of the whole, clockwise from twelve o'clock. */
+function wedge(start: number, end: number) {
+  const a0 = 2 * Math.PI * start - Math.PI / 2;
+  const a1 = 2 * Math.PI * end - Math.PI / 2;
+  const x0 = 100 + PIE_R * Math.cos(a0);
+  const y0 = 100 + PIE_R * Math.sin(a0);
+  const x1 = 100 + PIE_R * Math.cos(a1);
+  const y1 = 100 + PIE_R * Math.sin(a1);
+  return `M100,100L${x0.toFixed(2)},${y0.toFixed(2)}A${PIE_R},${PIE_R} 0 ${end - start > 0.5 ? 1 : 0} 1 ${x1.toFixed(2)},${y1.toFixed(2)}Z`;
+}
+
+/**
+ * A pie: how a whole divides into a few parts, each slice carrying its share when it is wide enough to
+ * hold it. The legend beside it names every part with its count and share, in the order the slices are
+ * drawn, and opens the records behind each; pointing at either lifts the slice out.
+ */
+export function PieChart({ slices, name, emptyText = "Nothing to show yet." }: {
+  slices: DonutSlice[];
+  /** What is being divided, for people using a screen reader. */
+  name: string;
+  emptyText?: string;
+}) {
+  const [active, setActive] = useState<number | null>(null);
+  const total = slices.reduce((sum, s) => sum + s.value, 0);
+  let cursor = 0;
+  const parts = slices.map((s) => {
+    if (s.value <= 0 || total === 0) return null;
+    const start = cursor / total;
+    cursor += s.value;
+    return { start, end: cursor / total };
+  });
+  const summary = `${name}: ${slices.map((s) => `${s.value} ${s.label.toLowerCase()}`).join(", ")}`;
+
+  return (
+    <div className={`donut pie${total === 0 ? " empty" : ""}`}>
+      <div className="pie-disc">
+        <svg viewBox="0 0 200 200" role="img" aria-label={summary}>
+          {total === 0 && <circle cx="100" cy="100" r={PIE_R} className="pie-none" />}
+          {slices.map((s, i) => {
+            const part = parts[i];
+            if (!part) return null;
+            const middle = 2 * Math.PI * ((part.start + part.end) / 2) - Math.PI / 2;
+            const lift = active === i ? `translate(${(7 * Math.cos(middle)).toFixed(2)} ${(7 * Math.sin(middle)).toFixed(2)})` : undefined;
+            const whole = part.end - part.start > 0.9999;
+            return (
+              <g key={s.label} transform={lift} onMouseEnter={() => setActive(i)} onMouseLeave={() => setActive(null)}>
+                {whole
+                  ? <circle cx="100" cy="100" r={PIE_R} fill={s.color} className="pie-slice" />
+                  : <path d={wedge(part.start, part.end)} fill={s.color} className="pie-slice" />}
+                <title>{`${s.label}: ${s.value} (${share(s.value, total)})`}</title>
+              </g>
+            );
+          })}
+          {slices.map((s, i) => {
+            const part = parts[i];
+            if (!part || part.end - part.start < 0.07) return null;
+            const middle = 2 * Math.PI * ((part.start + part.end) / 2) - Math.PI / 2;
+            const r = part.end - part.start > 0.9999 ? 0 : PIE_R * 0.6;
+            const out = active === i ? 7 : 0;
+            return (
+              <text key={s.label} x={100 + (r + out) * Math.cos(middle)} y={100 + (r + out) * Math.sin(middle) + 4.5}
+                textAnchor="middle" className="pie-label" aria-hidden="true">
+                {share(s.value, total)}
+              </text>
+            );
+          })}
+        </svg>
+      </div>
+      {total === 0 ? (
+        <p className="donut-empty">{emptyText}</p>
+      ) : (
+        <ul className="donut-legend">
+          {slices.map((s, i) => {
+            const row = (
+              <>
+                <i style={{ background: s.color }} aria-hidden="true" />
+                <span className="donut-name">{s.label}</span>
+                <b>{s.value}</b>
+                <small>{share(s.value, total)}</small>
+              </>
+            );
+            return (
+              <li key={s.label} className={`${s.value === 0 ? "zero" : ""}${active === i ? " on" : ""}`}
+                onMouseEnter={() => setActive(i)} onMouseLeave={() => setActive(null)}>
+                {s.to
+                  ? <Link to={s.to} className="donut-row" onFocus={() => setActive(i)} onBlur={() => setActive(null)}>{row}</Link>
+                  : <div className="donut-row">{row}</div>}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+  );
+}

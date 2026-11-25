@@ -73,6 +73,7 @@ class ResultsRegister(Report):
     default_sort = "-tested"
     filters = [
         Filter("product", "Product", lambda qs, v: qs.filter(sample__product_id=v), options=product_options),
+        Filter("section", "Laboratory section", lambda qs, v: qs.filter(sample__section_id=v), options=section_options),
         Filter("test", "Test", lambda qs, v: qs.filter(test_definition__name__icontains=v), kind="text"),
         Filter("test_name", "Test, exact name", lambda qs, v: qs.filter(test_definition__name=v),
                options=test_name_options),

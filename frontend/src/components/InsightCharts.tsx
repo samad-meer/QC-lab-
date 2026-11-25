@@ -20,7 +20,13 @@ const BOTTOM = 40;
 const MAX_BAR = 24;
 const GAP = 2;
 
-export interface ColumnPart { name: string; value: number; color: string }
+export interface ColumnPart {
+  name: string;
+  value: number;
+  color: string;
+  /** How the value reads, if not as the bare number: "12.5%". */
+  display?: string;
+}
 export interface Column {
   key: string;
   label: string;
@@ -49,10 +55,16 @@ function Swatch({ color }: { color: string }) {
  * Columns along one baseline. Each column is one hit target taller than its mark: hover or focus shows
  * what it counts, and a click opens the records. Arrow keys move along them.
  */
-export function Columns({ columns, name, emptyText, separators = [], legend, thin = false }: {
+export function Columns({ columns, name, emptyText, separators = [], legend, thin = false, valueLabels = false, format = compact, showZero = false }: {
   columns: Column[];
   name: string;
   emptyText: string;
+  /** Print the value on the cap of every column, as a scorecard does, not just the tallest. */
+  valueLabels?: boolean;
+  /** How an axis figure and a tallest-column figure are written. */
+  format?: (value: number) => string;
+  /** A chart of shares, where nothing at all is a result worth showing. */
+  showZero?: boolean;
   /** Hairlines between groups, as column indexes the line comes before. */
   separators?: number[];
   legend?: ReactNode;
@@ -64,7 +76,7 @@ export function Columns({ columns, name, emptyText, separators = [], legend, thi
   const [active, setActive] = useState<number | null>(null);
 
   const total = columns.reduce((sum, c) => sum + c.parts.reduce((s, p) => s + p.value, 0), 0);
-  if (total === 0) return <div className="chart-empty">{emptyText}</div>;
+  if (total === 0 && !showZero) return <div className="chart-empty">{emptyText}</div>;
 
   const plotW = Math.max(width - LEFT - 6, 60);
   const plotH = HEIGHT - TOP - BOTTOM;
@@ -97,7 +109,7 @@ export function Columns({ columns, name, emptyText, separators = [], legend, thi
           {[0, top / 2, top].map((t) => (
             <g key={t}>
               <line x1={LEFT} x2={LEFT + plotW} y1={y(t)} y2={y(t)} className="chart-grid" />
-              <text x={LEFT - 8} y={y(t) + 4} textAnchor="end" className="chart-axis">{compact(t)}</text>
+              <text x={LEFT - 8} y={y(t) + 4} textAnchor="end" className="chart-axis">{format(t)}</text>
             </g>
           ))}
           {separators.map((i) => (
@@ -118,8 +130,10 @@ export function Columns({ columns, name, emptyText, separators = [], legend, thi
                     ? <path key={p.name} d={topRounded(x, base - height, barW, height, 4)} fill={p.color} />
                     : <rect key={p.name} x={x} y={base - height} width={barW} height={height} fill={p.color} />;
                 })}
-                {i === peak && sums[i] > 0 && (
-                  <text x={centre(i)} y={y(sums[i]) - 6} textAnchor="middle" className="chart-peak">{sums[i]}</text>
+                {(valueLabels || (i === peak && sums[i] > 0)) && (
+                  <text x={centre(i)} y={y(sums[i]) - 6} textAnchor="middle" className="chart-peak">
+                    {c.parts.length === 1 && c.parts[0].display ? c.parts[0].display : format(sums[i])}
+                  </text>
                 )}
                 {i % every === 0 && (
                   <text x={centre(i)} textAnchor="middle" className={`chart-axis${c.strong ? " strong" : ""}`}>
@@ -140,7 +154,7 @@ export function Columns({ columns, name, emptyText, separators = [], legend, thi
         {shown && active !== null && (
           <Tooltip x={centre(active)} width={width} title={shown.tip ?? [shown.label, shown.sub].filter(Boolean).join(" ")}
             rows={[
-              ...shown.parts.map((p) => ({ value: p.value, label: p.name, color: p.color })),
+              ...shown.parts.map((p) => ({ value: p.display ?? p.value, label: p.name, color: p.color })),
               ...(shown.extra ?? []).map((e) => ({ value: e.value, label: e.label, color: "transparent" })),
             ]} />
         )}
@@ -154,7 +168,7 @@ export function Columns({ columns, name, emptyText, separators = [], legend, thi
             {columns.map((c) => (
               <tr key={c.key}>
                 <td>{c.tip ?? [c.label, c.sub].filter(Boolean).join(" ")}</td>
-                {c.parts.map((p) => <td key={p.name} className="num">{p.value}</td>)}
+                {c.parts.map((p) => <td key={p.name} className="num">{p.display ?? p.value}</td>)}
               </tr>
             ))}
           </tbody>
@@ -312,6 +326,28 @@ export function Failures({ rows, empty }: { rows: FailureRow[]; empty: string })
           </Link>
         </li>
       ))}
+    </ol>
+  );
+}
+
+export interface RankedRow { label: string; amount: number; text: ReactNode; to?: string }
+
+/** One bar to a row, longest first, each opening the records behind it. The bar is `tone`, a colour from the tokens. */
+export function Ranked({ rows, tone, empty }: { rows: RankedRow[]; tone: string; empty: string }) {
+  if (rows.length === 0) return <div className="chart-empty">{empty}</div>;
+  const most = Math.max(...rows.map((r) => r.amount), 1);
+  return (
+    <ol className="rank">
+      {rows.map((r) => {
+        const inside = (
+          <>
+            <span className="rank-label">{r.label}</span>
+            <span className="rank-track"><i style={{ width: `${Math.max((r.amount / most) * 100, 3)}%`, background: tone }} /></span>
+            <span className="rank-value">{r.text}</span>
+          </>
+        );
+        return <li key={r.label}>{r.to ? <Link to={r.to} className="rank-row">{inside}</Link> : <div className="rank-row">{inside}</div>}</li>;
+      })}
     </ol>
   );
 }

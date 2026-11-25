@@ -15,10 +15,10 @@ from django.utils import timezone
 from accounts.authz import has_perm
 from batches.api import batches_visible_to
 from batches.models import BatchDisposition, DispositionDecision
-from lims.models import Outcome, Section, TestResult
+from lims.models import Outcome, SampleType, Section, TestResult
 from lims.workflow import samples_visible_to
 from qclab.listing import window_from
-from quality.models import InvestigationStatus
+from quality.models import InvestigationKind, InvestigationStatus
 from quality.services import visible_investigations
 from .engine import stamp
 from .records import (
@@ -95,6 +95,32 @@ def _investigations(user, window, period: dict) -> list[dict]:
          "to": base + urlencode({"status": "PENDING_CLOSURE"})},
         {"key": "CLOSED", "label": "Closed in the period", "value": closed,
          "to": base + urlencode({"status": "CLOSED", "date_field": "closed", **period})},
+    ]
+
+
+def _sample_types(received, period: dict) -> list[dict]:
+    """The samples received in the period, by what kind of material they are. Each opens the samples it counts."""
+    counts = dict(received.order_by().values_list("product__sample_type").annotate(n=Count("id")))
+    rows = [
+        {"key": t.value, "label": t.label, "value": counts[t.value],
+         "to": _register(sample_type=t.value, date_field="received", **period)}
+        for t in SampleType if counts.get(t.value)
+    ]
+    if counts.get(""):
+        # A product whose type was never set: counted, but no filter can open just those.
+        rows.append({"key": "", "label": "Type not set", "value": counts[""]})
+    return rows
+
+
+def _investigation_kinds(user, window, period: dict) -> list[dict]:
+    """Investigations and deviations opened in the period, by kind. Only those this person may see."""
+    counts = dict(
+        window.apply(visible_investigations(user).order_by(), "opened_at").values_list("kind").annotate(n=Count("id"))
+    )
+    return [
+        {"key": k.value, "label": k.label, "value": counts.get(k.value, 0),
+         "to": "/reports/deviations?" + urlencode({"kind": k.value, "date_field": "opened", **period})}
+        for k in InvestigationKind
     ]
 
 
@@ -196,6 +222,9 @@ def build(request) -> dict:
             "failed": failures["tests"],
             "to_passed": "/reports/test-results?" + urlencode({"outcome": Outcome.PASS, **period}),
             "to_failed": "/reports/test-results?" + urlencode({"outcome": Outcome.FAIL, **period}),
+            # Reported with no limit to judge it by, such as "<LOQ": neither passed nor failed.
+            "reported": entered.filter(outcome=Outcome.REPORTED).count(),
+            "to_reported": "/reports/test-results?" + urlencode({"outcome": Outcome.REPORTED, **period}),
         },
         # Samples still in the lab by how near their due date is: each slice opens the register filtered to it.
         "due": [
@@ -203,6 +232,8 @@ def build(request) -> dict:
             for band, label in DUE_BANDS.items()
         ],
         "investigations": _investigations(user, window, period),
+        "sample_types": _sample_types(received, period),
+        "investigation_kinds": _investigation_kinds(user, window, period),
     }
     if has_perm(user, "sample.view.all") or has_perm(user, "batch.view.all"):
         charts["batches"] = _batch_decisions(user, window)
@@ -231,6 +262,7 @@ def build(request) -> dict:
     kit = insights.equipment(user)
     if kit:
         deeper["equipment"] = kit
+    deeper["scorecard"] = insights.scorecard(user, window, period, samples, scope_results, unit, buckets, kit)
 
     return {
         **stamp(request),

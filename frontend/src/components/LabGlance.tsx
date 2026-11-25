@@ -1,8 +1,11 @@
 import { useState } from "react";
 import type { KeyboardEvent, ReactNode } from "react";
-import { DonutChart, WorkloadBars } from "./Charts";
+import { DonutChart, PieChart, WorkloadBars } from "./Charts";
 import type { DonutSlice } from "./Charts";
 import { Ageing, DueOutlook, EquipmentHealth, Failures, ResultsByPeriod, TurnaroundSpread } from "./InsightCharts";
+import {
+  Gauge, Intake, Limits, PerformanceTable, ProductMix, ResultsByProduct, SectionRates, TurnaroundRanking, productColor,
+} from "./Scorecard";
 import KpiStrip from "./KpiStrip";
 import { TimelineChart } from "./reports/LineCharts";
 import type { ReportDashboard } from "../types";
@@ -19,20 +22,37 @@ export const GLANCE_PERIODS: { key: GlancePeriod; label: string }[] = [
 
 /** What each part means keeps its colour on every chart: red is late or failed, amber is near or waiting, green is done. */
 const DUE_COLORS: Record<string, string> = { overdue: "var(--fail)", soon: "var(--warn)", later: "var(--chart-1)" };
-const CASE_COLORS: Record<string, string> = { OPEN: "var(--warn)", PENDING_CLOSURE: "var(--chart-2)", CLOSED: "var(--pass)" };
+const CASE_COLORS: Record<string, string> = { OPEN: "var(--chart-2)", PENDING_CLOSURE: "var(--chart-4)", CLOSED: "var(--pass)" };
 const BATCH_COLORS: Record<string, string> = {
-  RELEASED: "var(--pass)", QUARANTINED: "var(--warn)", REJECTED: "var(--fail)", WAITING: "var(--chart-6)",
+  RELEASED: "var(--pass)", QUARANTINED: "var(--chart-2)", REJECTED: "var(--fail)", WAITING: "var(--chart-6)",
+};
+/** The pies' colours. Where a part means something, its colour says so; otherwise it is simply that part's own. */
+const POSITION_COLORS = ["var(--chart-2)", "var(--chart-4)", "var(--chart-3)", "var(--chart-5)", "var(--pass)", "var(--fail)", "var(--chart-6)"];
+const TYPE_COLORS: Record<string, string> = {
+  RAW_MATERIAL: "var(--chart-4)", PACKAGING: "var(--chart-3)", IN_PROCESS: "var(--chart-2)",
+  FINISHED_PRODUCT: "var(--chart-1)", STABILITY: "var(--chart-5)", "": "var(--chart-6)",
+};
+const KIND_COLORS: Record<string, string> = { OOS: "var(--fail)", OOT: "var(--chart-2)", DEVIATION: "var(--chart-4)" };
+const STATE_COLORS: Record<string, string> = {
+  ok: "var(--pass)", soon: "var(--chart-2)", late: "var(--fail)", out: "var(--chart-6)", held: "var(--chart-6)",
 };
 /** Parts with no meaning of their own, such as sections, take these in turn. */
 const SERIES = ["var(--chart-1)", "var(--chart-3)", "var(--chart-2)", "var(--chart-4)", "var(--chart-5)", "var(--chart-6)"];
 
 const sum = (rows: { value: number }[]) => rows.reduce((n, r) => n + r.value, 0);
 
-type Size = "third" | "half" | "full";
+type Size = "third" | "two" | "half" | "full";
 
-function Card({ title, hint, size = "third", children }: { title: string; hint?: string; size?: Size; children: ReactNode }) {
+function Card({ title, hint, size = "third", band = false, children }: {
+  title: string;
+  hint?: string;
+  size?: Size;
+  /** The heading as a coloured band across the top of the card. */
+  band?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <section className={`glance-card ${size}`} aria-label={title}>
+    <section className={`glance-card ${size}${band ? " band" : ""}`} aria-label={title}>
       <div className="glance-head">
         <h3>{title}</h3>
         {hint && <small>{hint}</small>}
@@ -42,14 +62,14 @@ function Card({ title, hint, size = "third", children }: { title: string; hint?:
   );
 }
 
-type TabKey = "overview" | "workload" | "quality" | "equipment";
+type TabKey = "scorecard" | "pies" | "trends" | "workload" | "quality" | "equipment";
 
 function readTab(): TabKey {
   try {
     const saved = window.sessionStorage.getItem("qclab-glance-tab");
-    if (saved === "workload" || saved === "quality" || saved === "equipment") return saved;
+    if (saved === "pies" || saved === "trends" || saved === "workload" || saved === "quality" || saved === "equipment") return saved;
   } catch { /* blocked storage: the first tab is fine */ }
-  return "overview";
+  return "scorecard";
 }
 
 /**
@@ -58,12 +78,15 @@ function readTab(): TabKey {
  * failed, whether the equipment is in date. Each figure opens the records it counts, and a chart with
  * nothing to show to this person is left out rather than drawn empty.
  */
-export default function LabGlance({ data, period, busy = false, onPeriod }: {
+export default function LabGlance({ data, period, busy = false, note, onPeriod }: {
   data: ReportDashboard;
-  period: GlancePeriod;
+  /** Where the period is chosen here. A page with a date filter of its own leaves both out. */
+  period?: GlancePeriod;
   /** The period was just changed and the new figures are on the way: the old ones stay, dimmed. */
   busy?: boolean;
-  onPeriod: (next: GlancePeriod) => void;
+  /** Said above the figures, such as why they cover a wider stretch than was asked for. */
+  note?: string;
+  onPeriod?: (next: GlancePeriod) => void;
 }) {
   const c = data.charts;
   const ins = data.insights;
@@ -85,12 +108,62 @@ export default function LabGlance({ data, period, busy = false, onPeriod }: {
     (n, g) => n + (g?.rows.find((r) => r.key === "late")?.value ?? 0), 0);
   const openCases = c.investigations.filter((d) => d.key !== "CLOSED").reduce((n, d) => n + d.value, 0);
   const tabs: { key: TabKey; label: string; attention: number; what: string }[] = [
-    { key: "overview", label: "Overview", attention: 0, what: "" },
+    { key: "scorecard", label: "Scorecard", attention: 0, what: "" },
+    { key: "pies", label: "Pie charts", attention: 0, what: "" },
+    { key: "trends", label: "Trends", attention: 0, what: "" },
     { key: "workload", label: "Workload", attention: ins.outlook.overdue.value, what: "samples are overdue" },
     { key: "quality", label: "Quality", attention: openCases, what: "investigations are open" },
     ...(hasEquipment ? [{ key: "equipment" as TabKey, label: "Equipment", attention: equipmentLate, what: "are past their date" }] : []),
   ];
-  const tab = tabs.some((t) => t.key === chosen) ? chosen : "overview";
+  const tab = tabs.some((t) => t.key === chosen) ? chosen : "scorecard";
+
+  // The pies, in the order a person reads the lab: where the samples are, how their results came out,
+  // what came in, what went wrong, what was decided, and whether the equipment is fit to use.
+  const stretch = data.label.toLowerCase();
+  const card = ins.scorecard;
+  const pies: { title: string; hint: string; slices: DonutSlice[]; empty: string }[] = [
+    {
+      title: "Where samples stand", hint: "every sample you can see, right now", empty: "No samples yet.",
+      slices: c.status.map((s, i) => ({ label: s.label, value: s.value, color: POSITION_COLORS[i] ?? SERIES[0], to: s.to })),
+    },
+    {
+      title: "Test results", hint: `entered ${stretch}`, empty: "No results were entered in this period.",
+      slices: [
+        { label: "Passed", value: passed, color: "var(--pass)", to: c.results.to_passed },
+        { label: "Failed", value: failed, color: "var(--fail)", to: c.results.to_failed },
+        ...(c.results.reported ? [{ label: "Reported, no limit", value: c.results.reported, color: "var(--chart-6)", to: c.results.to_reported }] : []),
+      ],
+    },
+    {
+      title: "Samples by kind of material", hint: `received ${stretch}`, empty: "Nothing was received in this period.",
+      slices: (c.sample_types ?? []).map((s) => ({ label: s.label, value: s.value, color: TYPE_COLORS[s.key] ?? SERIES[0], to: s.to })),
+    },
+    {
+      title: "Samples by product", hint: `received ${stretch}`, empty: "Nothing was received in this period.",
+      slices: card.products.filter((r) => r.received > 0).sort((a, b) => b.received - a.received)
+        .map((r) => ({ label: r.label, value: r.received, color: productColor(r.id), to: r.to_received })),
+    },
+    {
+      title: "Investigations by kind", hint: `opened ${stretch}`, empty: "None were opened in this period.",
+      slices: (c.investigation_kinds ?? []).map((k) => ({ label: k.label, value: k.value, color: KIND_COLORS[k.key] ?? SERIES[0], to: k.to })),
+    },
+    {
+      title: "Where investigations stand", hint: "open now, and closed in the period", empty: "No investigations or deviations.",
+      slices: cases,
+    },
+    ...(batches.length ? [{
+      title: "Batch decisions", hint: `batches registered ${stretch}`, empty: "No batches were registered in this period.",
+      slices: decisions,
+    }] : []),
+    {
+      title: "Failed results by test", hint: `the tests that failed most, ${stretch}`, empty: "No results failed in this period.",
+      slices: ins.failures.tests.map((r, i) => ({ label: r.label, value: r.failed, color: SERIES[i % SERIES.length], to: r.to })),
+    },
+    ...(ins.equipment?.instruments ? [{
+      title: "Instruments", hint: "by when their calibration runs out, right now", empty: "No instruments are recorded.",
+      slices: ins.equipment.instruments.rows.map((r) => ({ label: r.label, value: r.value, color: STATE_COLORS[r.key] ?? SERIES[0] })),
+    }] : []),
+  ];
 
   const choose = (next: TabKey) => {
     setChosen(next);
@@ -112,14 +185,17 @@ export default function LabGlance({ data, period, busy = false, onPeriod }: {
         <h2>Lab at a glance</h2>
         <span className="hint">{data.label} · {data.scope}{ins.compare ? ` · changes are against ${ins.compare}` : ""}</span>
         <div className="spacer" />
-        <label className="glance-period">
-          <span className="sr-only">Period</span>
-          <select value={period} onChange={(e) => onPeriod(e.target.value as GlancePeriod)}>
-            {GLANCE_PERIODS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
-          </select>
-        </label>
+        {onPeriod && period && (
+          <label className="glance-period">
+            <span className="sr-only">Period</span>
+            <select value={period} onChange={(e) => onPeriod(e.target.value as GlancePeriod)}>
+              {GLANCE_PERIODS.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+            </select>
+          </label>
+        )}
       </div>
       <div className="card-body glance-body">
+        {note && <p className="glance-note" role="status">{note}</p>}
         <div className={`glance-stack${busy ? " busy" : ""}`} aria-busy={busy}>
           <KpiStrip tiles={ins.tiles} compare={ins.compare} />
 
@@ -136,7 +212,42 @@ export default function LabGlance({ data, period, busy = false, onPeriod }: {
           </div>
 
           <div className="glance" role="tabpanel" id={`glance-panel-${tab}`} aria-labelledby={`glance-tab-${tab}`}>
-            {tab === "overview" && (
+            {tab === "scorecard" && (
+              <>
+                <Card size="two" title="Performance" hint={`${data.label.toLowerCase()}: a light and a trend on every row`}>
+                  <PerformanceTable card={card} />
+                </Card>
+                <Card title="Failure rate by section" hint={`${data.label.toLowerCase()}: results that failed`}>
+                  <SectionRates rows={card.sections} />
+                </Card>
+                <Card title="How the period went" hint="the dial moves with the figure; green begins at the tick">
+                  <div className="dials">{card.gauges.map((g) => <Gauge key={g.key} gauge={g} />)}</div>
+                </Card>
+                <Card title="Slowest to release" hint={`average days from receipt to release, ${data.label.toLowerCase()}`}>
+                  <TurnaroundRanking rows={card.products} />
+                </Card>
+                <Card band title="Limits the lab stays within" hint="the share inside each limit, right now">
+                  <Limits rows={card.limits} />
+                </Card>
+                <Card title="Samples received by product" hint={`${data.label.toLowerCase()}: a slice opens its samples`}>
+                  <ProductMix rows={card.products} />
+                </Card>
+                <Card title="Results by product" hint="passed and failed, with the share that passed">
+                  <ResultsByProduct rows={card.products} />
+                </Card>
+                <Card title={`Samples received per ${c.flow.unit}`} hint={data.label.toLowerCase()}>
+                  <Intake flow={c.flow} />
+                </Card>
+              </>
+            )}
+
+            {tab === "pies" && pies.map((pie, i) => (
+              <Card key={pie.title} title={`${i + 1}. ${pie.title}`} hint={pie.hint}>
+                <PieChart name={pie.title} slices={pie.slices} emptyText={pie.empty} />
+              </Card>
+            ))}
+
+            {tab === "trends" && (
               <>
                 <Card size="half" title="Samples received and completed" hint={`per ${c.flow.unit}`}>
                   <TimelineChart data={c.flow} emptyText="No samples were received or completed in this period." />

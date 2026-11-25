@@ -1584,7 +1584,11 @@ export interface ReportDashboard extends ReportStamp {
     sections: { label: string; value: number; to?: string }[];
     analysts?: { label: string; pending: number; overdue: number; to?: string }[];
     /** Passed against failed, over the results entered in the period. */
-    results: { passed: number; failed: number; to_passed?: string; to_failed?: string };
+    results: { passed: number; failed: number; reported?: number; to_passed?: string; to_failed?: string; to_reported?: string };
+    /** Samples received in the period, by the kind of material. */
+    sample_types?: { key: string; label: string; value: number; to?: string }[];
+    /** Investigations and deviations opened in the period, by kind. */
+    investigation_kinds?: { key: string; label: string; value: number; to?: string }[];
     /** Samples still in the lab, by how near their due date is. */
     due: { key: string; label: string; value: number; to?: string }[];
     /** Quality events now, and those closed in the period. */
@@ -1630,6 +1634,69 @@ export interface DashboardInsights {
   };
   failures: { tests: FailureRow[]; products: FailureRow[] };
   equipment?: { instruments?: EquipmentGroup; materials?: EquipmentGroup };
+  scorecard: Scorecard;
+}
+
+export type ScoreStatus = "good" | "warn" | "bad" | "none";
+
+/** A dial: a share of something, and the levels the screen colours it by. */
+export interface ScoreGauge {
+  key: string;
+  label: string;
+  value: number | null;
+  /** From this figure it reads as good; from the second, as a warning. */
+  reference: [number, number];
+  status: ScoreStatus;
+  sub: string;
+  to: string;
+}
+
+export interface ProductScore {
+  id: number;
+  label: string;
+  code: string;
+  received: number;
+  results: number;
+  /** Of those results, how many passed and how many failed. */
+  passed: number;
+  failed: number;
+  completed: number;
+  pass_rate: number | null;
+  on_time: number | null;
+  turnaround: number | null;
+  spark: (number | null)[];
+  status: ScoreStatus;
+  to: string;
+  to_received: string;
+  to_results: string;
+  to_released: string;
+}
+
+export interface AnalystScore {
+  id: number;
+  label: string;
+  open: number;
+  overdue: number;
+  completed: number;
+  turnaround: number | null;
+  on_time: number | null;
+  spark: (number | null)[];
+  status: ScoreStatus;
+  to: string;
+}
+
+export interface SectionRate { label: string; code: string; failed: number; total: number; rate: number; to: string }
+
+/** What the lab has to stay within: the share inside the limit, and the ones outside it a click away. */
+export interface LimitRow { key: string; label: string; total: number; outside: number; to: string | null }
+
+export interface Scorecard {
+  reference: Record<string, { good: number; warn: number }>;
+  gauges: ScoreGauge[];
+  products: ProductScore[];
+  analysts?: AnalystScore[];
+  sections: SectionRate[];
+  limits: LimitRow[];
 }
 
 export interface ReportTrend {

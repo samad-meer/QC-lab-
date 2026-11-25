@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { apiGet, apiPoll } from "../api";
 import { LAB_REGISTER_VIEWS, useAuth } from "../auth";
@@ -42,6 +42,16 @@ const STAGES: { key: "RECEIVED" | "IN_TESTING" | "IN_REVIEW"; label: string; col
   { key: "IN_REVIEW", label: "In review", color: "var(--chart-2)" },
 ];
 const REFRESH_MS = 60_000;
+
+/** The lab's positions right now, each with its own colour and icon, as the scorecard dresses its figures. */
+const NOW_LOOK: Record<string, { tone: string; icon: IconName }> = {
+  AWAITING_TESTING: { tone: "orange", icon: "inbox" },
+  UNDER_TESTING: { tone: "blue", icon: "flask" },
+  AWAITING_REVIEW: { tone: "indigo", icon: "sign" },
+  AWAITING_APPROVAL: { tone: "purple", icon: "check" },
+  INVESTIGATE: { tone: "red", icon: "alert" },
+  OVERDUE: { tone: "red", icon: "clock" },
+};
 
 function greeting(now: Date) {
   const h = fmtNow(now).hour;
@@ -97,6 +107,10 @@ export default function Dashboard() {
   const [period, setPeriod] = useState<GlancePeriod>("month");
   // Another period has been asked for and its figures have not come yet.
   const [glanceBusy, setGlanceBusy] = useState(false);
+  // A month with nothing in it yet opens on the last 90 days instead, and says so; once someone picks a
+  // period themselves, it is theirs.
+  const [widened, setWidened] = useState(false);
+  const picked = useRef(false);
 
   const fills = can("batch.record.fill");
   // Production fills batch records and never works on samples: sample counts would all read 0.
@@ -141,7 +155,20 @@ export default function Dashboard() {
     const fetchGlance = (quietly: boolean) => {
       const get = quietly ? apiPoll : apiGet;
       get<ReportDashboard>(`/api/reports/dashboard/?period=${period}`)
-        .then((d) => { if (current) { setMonth(d); setGlanceBusy(false); } })
+        .then((d) => {
+          if (!current) return;
+          const tiles = Object.fromEntries(d.insights.tiles.map((t) => [t.key, t.value]));
+          const quiet = !tiles.received && !tiles.completed && tiles.pass_rate === null;
+          if (quiet && period === "month" && !picked.current && !quietly) {
+            // The placeholder stays while the wider stretch loads, rather than drawing an empty month first.
+            setWidened(true);
+            setGlanceBusy(true);
+            setPeriod("quarter");
+            return;
+          }
+          setMonth(d);
+          setGlanceBusy(false);
+        })
         .catch(() => { if (current) { setMonth((m) => m ?? null); setGlanceBusy(false); } });
     };
     fetchGlance(false);
@@ -158,6 +185,18 @@ export default function Dashboard() {
   const batchWork = tasks?.batch_stages ?? [];
   const batchToDo = batchWork.filter((w) => w.state !== "waiting");
   const later = sampleWork ? LATER.filter((l) => (tasks?.counts[l.key] ?? 0) > 0) : [];
+  // Everything that can wait on this person, in the order it is listed on My tasks.
+  const waitingItems: { key: string; to: string; title: string; hint: string; tone: string; icon: IconName; count: number }[] = [
+    ...(fills ? [{
+      key: "batch_stages", to: "/tasks#batch_stages", title: "Batch records assigned to you",
+      hint: "Stages assigned to you that still need values or your signature", tone: "hot", icon: "record" as IconName,
+      count: batchToDo.length,
+    }] : []),
+    ...(sampleWork ? WAITING.map((w) => ({
+      key: w.key, to: `/tasks#${w.key}`, title: w.title, hint: w.hint, tone: w.tone, icon: w.icon,
+      count: tasks?.counts[w.key] ?? 0,
+    })) : []),
+  ];
   const waitingTotal = tasks ? tasks.actionable : null;
   const overdue = summary?.overdue ?? 0;
 
@@ -229,27 +268,51 @@ export default function Dashboard() {
               <span><b>You're all caught up.</b> New work shows here, and in My tasks, as soon as it reaches you.</span>
             </div>
           )}
-          <div className="dash2-tiles">
-            {fills && (
-              <Link to="/tasks#batch_stages" className={`dash2-tile ${tasks && batchToDo.length > 0 ? "hot" : "zero"}`}
-                title="Stages assigned to you that still need values or your signature">
-                <span className="dash2-ico"><Icon name="record" /></span>
-                <b>{tasks ? batchToDo.length : "–"}</b>
-                <span>Batch records assigned to you</span>
-              </Link>
-            )}
-            {sampleWork && WAITING.map((w) => {
-              const n = tasks?.counts[w.key] ?? 0;
-              return (
-                <Link key={w.key} to={`/tasks#${w.key}`} title={w.hint}
-                  className={`dash2-tile ${tasks && n > 0 ? w.tone : "zero"}`}>
+          {/* What has work in it gets a full tile; what has none is a small chip below, still one click away. */}
+          {(!tasks || waitingItems.some((w) => w.count > 0)) && (
+            <div className="dash2-tiles">
+              {waitingItems.filter((w) => !tasks || w.count > 0).map((w) => (
+                <Link key={w.key} to={w.to} title={w.hint} className={`dash2-tile ${tasks ? w.tone : "zero"}`}>
                   <span className="dash2-ico"><Icon name={w.icon} /></span>
-                  <b>{tasks ? n : "–"}</b>
+                  <b>{tasks ? w.count : "–"}</b>
                   <span>{w.title}</span>
                 </Link>
-              );
-            })}
-          </div>
+              ))}
+            </div>
+          )}
+          {tasks && waitingItems.some((w) => w.count === 0) && (
+            <div className="dash2-quiet" aria-label="Nothing waiting in these">
+              <span>Nothing waiting in</span>
+              {waitingItems.filter((w) => w.count === 0).map((w) => (
+                <Link key={w.key} to={w.to} title={w.hint}>
+                  <Icon name={w.icon} size={13} />{w.title}<b>0</b>
+                </Link>
+              ))}
+            </div>
+          )}
+          {overview && month && month.now.length > 0 && (
+            <div className="lab-now" aria-label="The lab right now">
+              <div className="lab-now-head">
+                <b>The lab right now</b>
+                <span>{month.scope}</span>
+              </div>
+              <div className="lab-now-tiles">
+                {month.now.map((t) => {
+                  const look = NOW_LOOK[t.key] ?? { tone: "blue", icon: "list" as IconName };
+                  const inside = (
+                    <>
+                      <span className="lab-now-ico"><Icon name={look.icon} size={18} /></span>
+                      <b>{t.value}</b>
+                      <span className="lab-now-label">{t.label}</span>
+                    </>
+                  );
+                  return t.to
+                    ? <Link key={t.key} to={t.to} className={`lab-now-tile ${look.tone}`}>{inside}</Link>
+                    : <div key={t.key} className={`lab-now-tile ${look.tone}`}>{inside}</div>;
+                })}
+              </div>
+            </div>
+          )}
           {later.length > 0 && (
             <div className="dash2-later">
               <span>Also:</span>
@@ -264,7 +327,15 @@ export default function Dashboard() {
       </section>
 
       {overview && month === undefined && <LoadingCard title="Lab at a glance" chart />}
-      {overview && month && <LabGlance data={month} period={period} busy={glanceBusy} onPeriod={(next) => { setGlanceBusy(true); setPeriod(next); }} />}
+      {overview && month && (
+        <LabGlance
+          data={month}
+          period={period}
+          busy={glanceBusy}
+          note={widened && period === "quarter" ? "Nothing has happened in the lab this month yet, so this shows the last 90 days." : undefined}
+          onPeriod={(next) => { picked.current = true; setWidened(false); setGlanceBusy(true); setPeriod(next); }}
+        />
+      )}
 
       <div className="dash2-grid">
         <div className="dash2-col">

@@ -96,6 +96,38 @@ class ResultsTests(ChartBase):
         self.assertEqual((results["passed"], results["failed"]), (0, 0))
 
 
+class PieTests(ChartBase):
+    def test_samples_are_split_by_kind_of_material_and_each_opens_its_samples(self):
+        from lims.models import Product
+        Product.objects.filter(pk=self.product.pk).update(sample_type="FINISHED_PRODUCT")
+        self.register_sample()
+        self.register_sample()
+        rows = self.slices(self.charts()["sample_types"])
+        self.assertEqual(list(rows), ["FINISHED_PRODUCT"])
+        self.assertEqual(rows["FINISHED_PRODUCT"]["value"], 2)
+        self.assertEqual(self.opens(rows["FINISHED_PRODUCT"]), 2)
+
+    def test_a_product_with_no_type_is_counted_but_has_nothing_to_open(self):
+        self.register_sample()
+        rows = self.slices(self.charts()["sample_types"])
+        self.assertEqual(rows[""]["value"], 1)
+        self.assertNotIn("to", rows[""])
+
+    def test_results_reported_without_a_limit_are_counted_apart_and_open(self):
+        self.released_sample()
+        results = self.charts()["results"]
+        self.assertEqual(results["reported"], TestResult.objects.filter(outcome=Outcome.REPORTED).count())
+        path, _, query = results["to_reported"].partition("?")
+        self.assertEqual(self.report(path.rsplit("/", 1)[1], query)["count"], results["reported"])
+
+    def test_investigations_opened_in_the_period_are_split_by_kind(self):
+        InvestigationTests.open_one(self, self.failed_sample())
+        rows = self.slices(self.charts()["investigation_kinds"])
+        self.assertEqual({k: s["value"] for k, s in rows.items()}, {"OOS": 1, "OOT": 0, "DEVIATION": 0})
+        for key, slice_ in rows.items():
+            self.assertEqual(self.opens(slice_), slice_["value"], key)
+
+
 class InvestigationTests(ChartBase):
     def open_one(self, sample):
         failed = sample.results.get(test_definition=self.t_assay, outcome="FAIL")

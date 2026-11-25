@@ -331,3 +331,125 @@ class EquipmentTests(InsightBase):
         self.material("S1", 200)
         self.assertEqual(list(self.insights(self.person_with("instrument.view"))["equipment"]), ["instruments"])
         self.assertEqual(list(self.insights(self.person_with("material.view", name="mat"))["equipment"]), ["materials"])
+
+    def test_the_limits_count_instruments_and_materials_inside_their_dates(self):
+        self.instrument("A", due=90)
+        self.instrument("B", due=10)
+        self.instrument("C", due=-1)
+        self.material("S1", 200)
+        self.material("S2", -4)
+        limits = {l["key"]: l for l in self.insights()["scorecard"]["limits"]}
+        self.assertEqual((limits["instruments"]["total"], limits["instruments"]["outside"]), (3, 1))
+        self.assertEqual((limits["materials"]["total"], limits["materials"]["outside"]), (2, 1))
+
+    def test_someone_who_may_not_see_the_registers_gets_no_limit_for_them(self):
+        limits = {l["key"] for l in self.insights(self.person_with())["scorecard"]["limits"]}
+        self.assertEqual(limits, {"samples", "investigations"})
+
+
+class ScorecardTests(InsightBase):
+    def card(self, user=None, query="period=month"):
+        return self.insights(user, query)["scorecard"]
+
+    def gauges(self, **kw):
+        return {g["key"]: g for g in self.card(**kw)["gauges"]}
+
+    def test_the_dials_read_the_pass_rate_and_the_share_released_on_time(self):
+        self.released_sample()  # Description and Assay pass
+        self.failed_sample()  # Description passes, Assay fails
+        dials = self.gauges()
+        self.assertEqual(dials["pass_rate"]["value"], 75.0)
+        self.assertEqual(dials["pass_rate"]["status"], "bad")
+        self.assertEqual(dials["on_time"]["value"], 100.0)
+        self.assertEqual(dials["on_time"]["status"], "good")
+        self.assertEqual(self.opens(dials["pass_rate"]["to"]), 4)
+
+    def test_a_dial_with_nothing_to_read_is_not_a_zero(self):
+        dials = self.gauges()
+        self.assertIsNone(dials["pass_rate"]["value"])
+        self.assertEqual(dials["pass_rate"]["status"], "none")
+
+    def test_the_reading_guide_is_in_the_payload_for_the_screen_to_draw(self):
+        self.assertEqual(self.card()["reference"]["pass_rate"], {"good": 95, "warn": 85})
+
+    def test_a_product_row_counts_what_came_in_and_how_its_results_went(self):
+        self.released_sample()
+        self.failed_sample()
+        self.register_sample()
+        rows = self.card()["products"]
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertEqual((row["label"], row["received"], row["results"], row["completed"]),
+                         (self.product.name, 3, 4, 1))
+        self.assertEqual((row["passed"], row["failed"]), (3, 1))
+        self.assertEqual(row["pass_rate"], 75.0)
+        self.assertEqual(row["status"], "bad")
+        self.assertEqual(len(row["spark"]), len(self.insights()["tiles"][0]["spark"]))
+
+    def test_each_figure_of_a_product_row_opens_exactly_the_records_it_counts(self):
+        self.released_sample()
+        self.failed_sample()
+        row = self.card()["products"][0]
+        self.assertEqual(self.opens(row["to_received"]), row["received"])
+        self.assertEqual(self.opens(row["to_results"]), row["results"])
+        self.assertEqual(self.opens(row["to_released"]), row["completed"])
+        self.assertEqual(row["to"], f"/reports/product/{self.product.pk}")
+
+    def test_a_product_with_nothing_happening_is_not_listed(self):
+        self.assertEqual(self.card()["products"], [])
+
+    def test_a_section_shows_the_share_of_its_results_that_failed_and_opens_the_failures(self):
+        self.released_sample()
+        self.failed_sample()
+        rows = self.card()["sections"]
+        self.assertEqual([(r["label"], r["code"], r["failed"], r["total"], r["rate"]) for r in rows],
+                         [(self.section.name, self.section.code, 1, 4, 25.0)])
+        self.assertEqual(self.opens(rows[0]["to"]), 1)
+
+    def test_an_analyst_sees_the_scorecard_of_their_own_samples_only(self):
+        mine, other = self.failed_sample(), self.failed_sample()
+        self.someone_elses(other)
+        self.assertEqual(self.card(self.analyst)["products"][0]["results"], 2)
+        self.assertEqual(self.card()["products"][0]["results"], 4)
+
+    def test_the_analyst_table_is_for_whoever_may_plan_work_and_for_no_one_else(self):
+        self.assertIn("analysts", self.card())
+        self.assertNotIn("analysts", self.card(self.analyst))
+
+    def test_the_analyst_table_counts_what_each_holds_and_flags_what_is_late(self):
+        late = self.register_sample()
+        self.register_sample()
+        self.due_in(late, -3)
+        rows = self.card()["analysts"]
+        self.assertEqual(len(rows), 1)
+        self.assertEqual((rows[0]["label"], rows[0]["open"], rows[0]["overdue"]),
+                         (self.analyst.display_name(), 2, 1))
+        self.assertEqual(rows[0]["status"], "bad")
+        self.assertEqual(rows[0]["to"], f"/reports/pending-work?analyst={self.analyst.pk}")
+
+    def test_the_limits_count_the_open_samples_inside_and_outside_their_due_date(self):
+        for days in (-2, 1, 5):
+            self.due_in(self.register_sample(), days)
+        done, _ = self.released_sample()
+        self.due_in(done, -9)  # finished: not part of what is waiting
+        limit = {l["key"]: l for l in self.card()["limits"]}["samples"]
+        self.assertEqual((limit["total"], limit["outside"]), (3, 1))
+        self.assertEqual(self.opens(limit["to"]), 1)
+
+    def test_nothing_outside_a_limit_gives_nothing_to_open(self):
+        self.due_in(self.register_sample(), 4)
+        limit = {l["key"]: l for l in self.card()["limits"]}["samples"]
+        self.assertEqual(limit["outside"], 0)
+        self.assertIsNone(limit["to"])
+
+    def test_the_limits_count_open_investigations_past_their_due_date_and_open_them(self):
+        from .test_dashboard_charts import InvestigationTests
+        opener = InvestigationTests.open_one
+        late, fresh = opener(self, self.failed_sample()), opener(self, self.failed_sample())
+        from quality.models import Investigation
+        Investigation.objects.filter(pk=late.pk).update(due_date=timezone.localdate() - timedelta(days=2))
+        Investigation.objects.filter(pk=fresh.pk).update(due_date=timezone.localdate() + timedelta(days=2))
+        limit = {l["key"]: l for l in self.card()["limits"]}["investigations"]
+        self.assertEqual((limit["total"], limit["outside"]), (2, 1))
+        self.assertEqual(self.opens(limit["to"]), 1)
+

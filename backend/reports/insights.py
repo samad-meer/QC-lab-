@@ -14,10 +14,14 @@ from urllib.parse import urlencode
 from django.db.models import Count
 from django.utils import timezone
 
+from accounts.authz import has_perm
+from accounts.models import User
 from labrecords import services as lab
 from labrecords.models import InstrumentStatus, Material, MaterialStatus
 from labrecords.registers import REGISTERS
-from lims.models import FINISHED, Outcome, Product
+from lims.models import FINISHED, Outcome, Product, Section
+from quality.models import InvestigationStatus
+from quality.services import visible_investigations
 from qclab.listing import Window
 from .records import POSITIONS, bucket_of, days_between, mean
 from .results import JUDGED
@@ -38,7 +42,13 @@ AGE_BANDS = {
 TURNAROUND_BANDS = [("<1", 0, 1), ("1–2", 1, 2), ("2–3", 2, 3), ("3–5", 3, 5), ("5–7", 5, 7),
                     ("7–10", 7, 10), ("10+", 10, None)]
 
+# Where the dials and the traffic lights change colour: good from the first figure, a warning from the second.
+# A reading guide for the screen, not a commitment the lab has made: what the lab promises is its own due
+# dates, which the limits panel counts.
+REFERENCE = {"pass_rate": (95, 85), "on_time": (90, 75)}
+
 OUTLOOK_DAYS = 14
+TABLE_ROWS = 10
 EXPIRY_WARNING_DAYS = 30
 TOP = 8
 
@@ -341,3 +351,178 @@ def equipment(user) -> dict | None:
             ],
         }
     return shown or None
+
+
+# --- the scorecard ----------------------------------------------------------
+
+def _status(value, reference):
+    """good, warn or bad against a reading guide; none when there is nothing to judge."""
+    if value is None:
+        return "none"
+    good, warn = reference
+    return "good" if value >= good else "warn" if value >= warn else "bad"
+
+
+def _share(part, whole):
+    return None if not whole else round(100 * part / whole, 1)
+
+
+def _trend(pairs, unit, buckets, reduce, empty=None):
+    """One value for each day, week or month: the pairs are (moment, value)."""
+    grouped = defaultdict(list)
+    for moment, value in pairs:
+        grouped[bucket_of(timezone.localtime(moment).date(), unit)].append(value)
+    return [round(reduce(grouped[b]), 1) if b in grouped else empty for b in buckets]
+
+
+def _average(values):
+    return sum(values) / len(values)
+
+
+def scorecard(user, window, period, samples, results, unit, buckets, equipment_now) -> dict:
+    """
+    The lab at a glance as a scorecard: dials for how results and release went, a table by product (and by
+    analyst, for whoever may plan work), the failure rate by section, and the limits the lab has to stay within.
+    """
+    judged = list(
+        window.apply(results, "entered_at").exclude(outcome=Outcome.REPORTED).order_by()
+        .values_list("sample__product_id", "sample__section_id", "outcome", "entered_at")
+    )
+    received = list(window.apply(samples, "received_at").order_by().values_list("product_id", flat=True))
+    released = list(
+        window.apply(samples.filter(released_at__isnull=False), "released_at").order_by()
+        .values_list("product_id", "received_at", "released_at", "due_date", "assigned_analyst_id")
+    )
+
+    passed = sum(1 for _, _, o, _ in judged if o == Outcome.PASS)
+    on_time = [timezone.localtime(b).date() <= due for _, _, b, due, _ in released]
+    pass_rate = _share(passed, len(judged))
+    on_time_rate = _share(sum(on_time), len(on_time))
+    released_link = "/reports/turnaround?" + urlencode({"date_field": "released", **period})
+
+    gauges = [
+        {"key": "pass_rate", "label": "Test pass rate", "value": pass_rate, "reference": REFERENCE["pass_rate"],
+         "status": _status(pass_rate, REFERENCE["pass_rate"]),
+         "sub": f"{passed} passed, {len(judged) - passed} failed" if judged else "No results in this period",
+         "to": _results(outcome=JUDGED, **period)},
+        {"key": "on_time", "label": "Released on time", "value": on_time_rate, "reference": REFERENCE["on_time"],
+         "status": _status(on_time_rate, REFERENCE["on_time"]),
+         "sub": f"{sum(on_time)} of {len(on_time)} by their due date" if on_time else "Nothing released in this period",
+         "to": released_link},
+    ]
+
+    # By product: what came in, how its results went, how long release took, and the trend of its pass rate.
+    codes = dict(Product.objects.values_list("pk", "code"))
+    titles = dict(Product.objects.values_list("pk", "name"))
+    by_product = defaultdict(lambda: {"received": 0, "results": [], "released": []})
+    for pid in received:
+        by_product[pid]["received"] += 1
+    for pid, _, outcome, at in judged:
+        by_product[pid]["results"].append((at, outcome))
+    for pid, got, done, due, _ in released:
+        by_product[pid]["released"].append((got, done, due))
+    rows = []
+    for pid, got in by_product.items():
+        good = sum(1 for _, o in got["results"] if o == Outcome.PASS)
+        rate = _share(good, len(got["results"]))
+        days = [days_between(a, b) for a, b, _ in got["released"]]
+        timely = [timezone.localtime(b).date() <= due for _, b, due in got["released"]]
+        rows.append({
+            "id": pid, "label": titles.get(pid, ""), "code": codes.get(pid, ""),
+            "received": got["received"], "results": len(got["results"]), "completed": len(got["released"]),
+            "passed": good, "failed": len(got["results"]) - good,
+            "pass_rate": rate, "on_time": _share(sum(timely), len(timely)), "turnaround": _rounded(mean(days)),
+            "spark": _trend(((at, 100 if o == Outcome.PASS else 0) for at, o in got["results"]), unit, buckets, _average),
+            "status": _status(rate, REFERENCE["pass_rate"]),
+            "to": f"/reports/product/{pid}",
+            "to_received": _register(product=pid, date_field="received", **period),
+            "to_results": _results(product=pid, outcome=JUDGED, **period),
+            "to_released": "/reports/turnaround?" + urlencode({"product": pid, "date_field": "released", **period}),
+        })
+    rows.sort(key=lambda r: (-r["results"], -r["received"], r["label"]))
+
+    # By section: the share of results that failed, each against everything entered there.
+    totals, failed = defaultdict(int), defaultdict(int)
+    for _, sid, outcome, _ in judged:
+        totals[sid] += 1
+        failed[sid] += outcome == Outcome.FAIL
+    sections = [
+        {"label": s.name, "code": s.code, "failed": failed[s.pk], "total": totals[s.pk],
+         "rate": round(100 * failed[s.pk] / totals[s.pk], 1),
+         "to": _results(outcome=Outcome.FAIL, section=s.pk, **period)}
+        for s in Section.objects.filter(pk__in=totals).order_by("name")
+    ]
+
+    card = {
+        "reference": {k: {"good": g, "warn": w} for k, (g, w) in REFERENCE.items()},
+        "gauges": gauges,
+        "products": rows[:TABLE_ROWS],
+        "sections": sections,
+        "limits": _limits(user, samples, equipment_now),
+    }
+    if has_perm(user, "report.performance"):
+        card["analysts"] = _analysts(user, unit, buckets, released)
+    return card
+
+
+def _analysts(user, unit, buckets, released) -> list[dict]:
+    """What each analyst holds and how long release took for them: for planning the work, not for ranking people."""
+    from .workflow import waiting_work  # the workflow reports read this module's filters
+
+    open_work = defaultdict(lambda: {"open": 0, "overdue": 0, "name": ""})
+    for row in waiting_work(user):
+        mine = open_work[row["analyst_id"]]
+        mine["name"] = row["analyst_name"]
+        mine["open"] += 1
+        mine["overdue"] += 1 if row["overdue_days"] > 0 else 0
+    done = defaultdict(list)
+    for _, got, finished, due, analyst in released:
+        done[analyst].append((got, finished, due))
+    ids = {a for a in {*open_work, *done} if a}
+    people = {u.pk: u.display_name() for u in User.objects.filter(pk__in=ids)}
+    rows = []
+    for pk in ids:
+        mine = open_work.get(pk, {"open": 0, "overdue": 0, "name": ""})
+        finished = done.get(pk, [])
+        days = [days_between(a, b) for a, b, _ in finished]
+        timely = [timezone.localtime(b).date() <= due for _, b, due in finished]
+        # Someone with something overdue is flagged, in proportion to what they hold.
+        share = mine["overdue"] / mine["open"] if mine["open"] else None
+        rows.append({
+            "id": pk, "label": people.get(pk) or mine["name"], "open": mine["open"], "overdue": mine["overdue"],
+            "completed": len(finished), "turnaround": _rounded(mean(days)), "on_time": _share(sum(timely), len(timely)),
+            "spark": _trend(((b, 1) for _, b, _ in finished), unit, buckets, sum, 0),
+            "status": "none" if share is None else "good" if share == 0 else "warn" if share <= 0.25 else "bad",
+            "to": f"/reports/pending-work?analyst={pk}",
+        })
+    rows.sort(key=lambda r: (-r["open"], r["label"]))
+    return rows[:TABLE_ROWS]
+
+
+def _limits(user, samples, equipment_now) -> list[dict]:
+    """
+    What the lab has to stay within: a due date is the promise a sample was registered with, a calibration
+    or an expiry date is a rule. Each is a share inside its limit, with the ones outside it a click away.
+    """
+    today = timezone.localdate()
+    live = samples.exclude(status__in=FINISHED).order_by()
+    open_n, late_n = live.count(), live.filter(due_date__lt=today).count()
+    limits = [{
+        "key": "samples", "label": "Open samples within their due date", "total": open_n, "outside": late_n,
+        "to": _register(due="overdue") if late_n else None,
+    }]
+    cases = visible_investigations(user).order_by().exclude(status=InvestigationStatus.CLOSED)
+    case_n, case_late = cases.count(), cases.filter(due_date__lt=today).count()
+    limits.append({
+        "key": "investigations", "label": "Open investigations within their due date", "total": case_n,
+        "outside": case_late, "to": "/reports/deviations?late=1" if case_late else None,
+    })
+    for group, label in (("instruments", "Instruments in calibration"), ("materials", "Standards and reagents in date")):
+        rows = {r["key"]: r["value"] for r in (equipment_now or {}).get(group, {}).get("rows", [])}
+        if not rows:
+            continue
+        limits.append({
+            "key": group, "label": label, "total": rows["ok"] + rows["soon"] + rows["late"], "outside": rows["late"],
+            "to": equipment_now[group]["to"] if rows["late"] else None,
+        })
+    return limits
