@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
-import { homeFor, useAuth } from "../auth";
+import { HOME_PATH, useAuth } from "../auth";
 import BrandMark from "../components/BrandMark";
 import { Backdrop, Capsule3D, Molecule } from "../components/Decor";
 import { initials } from "../components/SignatureGrid";
@@ -84,8 +84,8 @@ export default function Login() {
     setBusy(true);
     setError("");
     try {
-      const user = await login(username.trim(), password);
-      navigate(homeFor(user), { replace: true });
+      await login(username.trim(), password);
+      navigate(HOME_PATH, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Sign in failed.");
       setBusy(false);

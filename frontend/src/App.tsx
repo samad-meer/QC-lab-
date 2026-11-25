@@ -1,5 +1,5 @@
 import { Navigate, Route, Routes } from "react-router-dom";
-import { homeFor, LAB_REGISTER_VIEWS, useAuth } from "./auth";
+import { HOME_PATH, LAB_REGISTER_VIEWS, useAuth } from "./auth";
 import Layout from "./components/Layout";
 import { NotificationsProvider } from "./components/Notifications";
 import { ToastProvider } from "./components/Toast";
@@ -46,7 +46,7 @@ import { useTheme } from "./theme";
 /** Hides a route the user has no permission for: one key, or any of several. The API enforces it too. */
 function Guarded({ need, children }: { need: Permission | Permission[]; children: React.ReactNode }) {
   const { can, user } = useAuth();
-  if (!(Array.isArray(need) ? need : [need]).some(can)) return <Navigate to={user ? homeFor(user) : "/"} replace />;
+  if (!(Array.isArray(need) ? need : [need]).some(can)) return <Navigate to={user ? HOME_PATH : "/"} replace />;
   return <>{children}</>;
 }
 
@@ -79,7 +79,7 @@ export default function App() {
       <NotificationsProvider>
       <Layout>
         <Routes>
-          <Route path="/" element={<Navigate to={homeFor(user)} replace />} />
+          <Route path="/" element={<Navigate to={HOME_PATH} replace />} />
           <Route path="/frontdesk" element={<Guarded need="sample.register"><FrontDesk /></Guarded>} />
           <Route path="/assign" element={<Guarded need="sample.assign"><AssignWork /></Guarded>} />
           <Route path="/worklist" element={<Guarded need="result.enter"><Worklist /></Guarded>} />

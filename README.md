@@ -63,8 +63,29 @@ Backend — **port 8007**:
 ```powershell
 .venv\Scripts\python.exe manage.py seed_demo      # demo users + products
 .venv\Scripts\python.exe manage.py seed_floxcip   # optional: Floxcip 500 mg, batch 26FB017
+.venv\Scripts\python.exe manage.py seed_dashboard # optional: three weeks of lab work, for the dashboard
+.venv\Scripts\python.exe manage.py seed_production # optional: a batch record and four production batches
 .venv\Scripts\python.exe manage.py runserver      # defaults to 8007
 ```
+
+`seed_dashboard` enters three weeks of lab work, so the dashboard's figures and charts
+have something in them: 21 samples of Paracetamol, Vitamin C and Ibuprofen at every
+stage (just received, being tested, waiting for review or approval, released), three
+failed results with an investigation open, one awaiting closure and one closed, and the
+quality unit's decisions on their batches (`DM-…`): three released, one quarantined, one
+rejected. `seed_production` enters the production side: Metformin 500 mg Tablets with a
+three-stage batch record (dispensing, granulation and drying, compression) and four
+batches at different points in it, one of them assigned to the operator and not yet
+written, so production's screens have work too.
+
+Both go through the same API as the screens, signed by the demo accounts, so every rule,
+password signature and audit entry applies. They are the only seeders that date their
+records in the past: each step runs on a clock that moves from three weeks ago to now, in
+the order the work would have happened, so a trend has more than one day in it and the
+audit trail still reads in order. Nothing is edited afterwards. Run `seed_demo` first;
+add `--dry-run` to see them work and roll back. Each runs once and refuses if its records
+are already there, and like the others they never run outside `DEBUG`. The records they
+make are kept, as every record in QC Lab is, so to start without them use a fresh database.
 
 `seed_floxcip` enters batch 26FB017 of Floxcip 500 mg Tablets as it was written on
 its paper record: the product and its specification, the twelve QC stages with every
