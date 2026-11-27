@@ -35,7 +35,7 @@ export default function ExecutionCard({
       </div>
       <div className="card-body">
         <StepTabs steps={exec.steps} selected={step.key} onSelect={setSelected} />
-        <StepPanel sampleId={sampleId} exec={exec} step={step} onChange={onChange} />
+        <StepPanel key={step.key} sampleId={sampleId} exec={exec} step={step} onChange={onChange} />
       </div>
     </section>
   );

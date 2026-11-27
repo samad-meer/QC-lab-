@@ -1,5 +1,5 @@
 """
-What the demo-data seeders share (seed_dashboard, seed_production).
+What the demo-data seeders share (seed_dashboard, seed_production, seed_floxcip_batches).
 
 They enter every record through the API, as the screens do, so each rule, password signature and
 audit entry applies. The one thing they change is the clock. A lab that had been working for weeks has
@@ -11,6 +11,7 @@ The file starts with an underscore so Django does not list it as a command.
 """
 import datetime as dt
 import heapq
+from decimal import Decimal
 from unittest import mock
 
 from django.conf import settings
@@ -109,6 +110,41 @@ class Timeline:
     def local(moment: dt.datetime) -> str:
         """A moment as a batch record writes it: 2026-11-04T09:20, in the lab's time zone."""
         return timezone.localtime(moment).strftime("%Y-%m-%dT%H:%M")
+
+
+def receipt_answer(item: dict) -> str:
+    """An answer that meets a receipt check, whatever kind of check it is."""
+    kind = item["response_type"]
+    if kind == "CHECKBOX":
+        return "true"
+    if kind == "YES_NO":
+        return item["expected"] or "YES"
+    if kind == "PASS_FAIL":
+        return "PASS"
+    if kind == "NUMBER":
+        low, high = item["min_value"], item["max_value"]
+        if low is not None and high is not None:
+            return str((Decimal(low) + Decimal(high)) / 2)
+        return str(Decimal(low) + 1) if low is not None else (str(Decimal(high) - 1) if high is not None else "1")
+    if kind == "TEXT":
+        return "As expected"
+    if kind == "DATE":
+        return timezone.localdate().isoformat()
+    if kind == "CHOICE":
+        return item["expected"] or item["options"][0]
+    raise CommandError(f"The receipt check “{item['label']}” asks for a file, which a demo sample cannot give.")
+
+
+def complete_receipt(api: Api, sample_id: int, who: str = "frontdesk") -> None:
+    """The receipt checks the sample's workflow asks for, made by the front desk, so testing can start."""
+    state = api("get", f"/api/samples/{sample_id}/execution/", who)
+    receipt = next((step for step in state["steps"] if step["kind"] == "receipt"), None)
+    if receipt is None or receipt["status"] == "COMPLETED":
+        return
+    for row in receipt["checklist"]:
+        api("post", f"/api/samples/{sample_id}/checklist/", who,
+            {"item_id": row["item"]["id"], "value": receipt_answer(row["item"])})
+    api("post", f"/api/samples/{sample_id}/receipt/complete/", who, {})
 
 
 class DryRun(Exception):

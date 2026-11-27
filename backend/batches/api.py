@@ -5,7 +5,7 @@ store, and the numbering rule.
 """
 import json
 
-from django.db.models import Count
+from django.db.models import Count, Max
 from django.http import Http404
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers, status
@@ -42,11 +42,24 @@ IMAGE_EXTENSIONS = {"jpg", "jpeg", "png", "webp"}
 
 
 def _progress_text(b: Batch) -> str:
-    """“2 of 4 passed”, for the list and its export. Empty for a batch with no QC stages."""
-    p = stages.progress(b)
+    """“2 of 4 passed”, for the list's export. Empty for a batch with no QC stages."""
+    p = b.qc_progress if hasattr(b, "qc_progress") else stages.progress(b)
     if p is None:
         return ""
     return f"{p['passed']} of {p['required']} passed" + (" · one failed" if p["failed"] else "")
+
+
+def _with_progress(picked, request):
+    """The exported batches, each with its QC stage progress, loaded for all of them at once."""
+    found = stages.progress_many(picked)
+    for b in picked:
+        b.qc_progress = found[b.pk]
+    return picked
+
+
+def _stage_version(b: Batch) -> str:
+    """“v2”, the version of its product's QC stages the batch goes through; empty when it has none."""
+    return f"v{b.stage_plan.version}" if b.stage_plan_id else ""
 
 
 def _product_name(value: str) -> str:
@@ -67,12 +80,14 @@ BATCH_EXPORT = ListExport(
         Col("Manufactured", lambda b: b.manufacturing_date, 0.9),
         Col("Expiry", lambda b: b.expiry_date, 0.9),
         Col("Samples", lambda b: b.sample_count, 0.6),
+        Col("Stages version", _stage_version, 0.8),
         Col("QC stages", _progress_text, 1.0),
         Col("Recorded", lambda b: b.created_at, 1.2),
     ],
     filters={"q": "Search", "product": ("Product", _product_name)},
     dates={"registered": "Date recorded", "manufactured": "Date of manufacture", "expiry": "Expiry date"},
     scoped=True,
+    rows=_with_progress,
 )
 CanManageConfig = RequiresPermission.of("config.manage")
 
@@ -86,7 +101,7 @@ def batches_visible_to(user):
     With sample.view.all or batch.view.all (production), every batch; otherwise those
     behind samples you can see.
     """
-    qs = Batch.objects.select_related("product__section", "created_by")
+    qs = Batch.objects.select_related("product__section", "created_by", "stage_plan")
     if has_perm(user, "sample.view.all") or has_perm(user, "batch.view.all"):
         return qs
     return qs.filter(pk__in=samples_visible_to(user).exclude(batch=None).values("batch_id"))
@@ -469,6 +484,21 @@ class BatchWriteSerializer(serializers.Serializer):
     notes = serializers.CharField(max_length=500, required=False, allow_blank=True)
 
 
+def _list_rows(page) -> list[dict]:
+    """One page of the batch list: each batch, the version of its QC stages, and how far it is through them."""
+    page = list(page)
+    found = stages.progress_many(page)
+    # The newest version of each product's stages, so a batch on an older one can say so.
+    latest = dict(QcStagePlan.objects.filter(product_id__in={b.product_id for b in page}).values("product_id")
+                  .annotate(newest=Max("version")).values_list("product_id", "newest"))
+    return [{
+        **batch_payload(b),
+        "qc_progress": found[b.pk],
+        "stage_plan": {"version": b.stage_plan.version, "latest": latest.get(b.product_id, b.stage_plan.version)}
+        if b.stage_plan_id else None,
+    } for b in page]
+
+
 @api_view(["GET", "POST"])
 def batches(request):
     if request.method == "GET":
@@ -478,9 +508,7 @@ def batches(request):
             qs = qs.filter(product_id=product)
         qs = filter_by_text(request, qs, ["internal_id", "official_batch_no", "product__name", "product__code"])
         qs = filter_by_date(request, qs, BATCH_DATES).annotate(sample_count=Count("samples"))
-        return paginated(request, qs.order_by("-created_at", "-id"),
-                         lambda rows: [{**batch_payload(b), "qc_progress": stages.progress(b)} for b in rows],
-                         export=BATCH_EXPORT)
+        return paginated(request, qs.order_by("-created_at", "-id"), _list_rows, export=BATCH_EXPORT)
 
     if not has_perm(request.user, "batch.manage"):
         return Response({"detail": "You do not have permission to manage batches."}, status=status.HTTP_403_FORBIDDEN)

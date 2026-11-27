@@ -4,6 +4,7 @@ for the ones before it, and QA can make a stage not apply to one batch, or add a
 stage to one batch alone. Signed, with reasons, and the product's stages untouched.
 """
 from django.db import DatabaseError, connection, transaction
+from django.test.utils import CaptureQueriesContext
 
 from audit.describe import describe
 from audit.models import AuditEvent
@@ -367,4 +368,64 @@ class BatchListTests(RefinedBase):
         self.record(sample.batch_id, ids["Line clearance"], decision="FAILED", remarks="Residue found")
         row = self.client.get("/api/batches/").data["results"][0]
         self.assertTrue(row["qc_progress"]["failed"])
+        self.assertEqual(self.client.get("/api/batches/?file=xlsx").status_code, 200)
+
+    def test_a_page_of_batches_is_judged_as_each_batch_alone_would_be(self):
+        """The list works out the stages of all its batches together, and must agree with each worked out alone."""
+        from .stages import progress, progress_many
+
+        before = self.register_sample().batch  # made before the product had stages: none to show
+        ids = self.set_up_stages([LINE, GRAIN])
+        passed = self.released(self.registered(ids["Final grain"], batch_no="B-002")).batch
+        failed = self.registered(ids["Final grain"], batch_no="B-003").batch
+        self.assertEqual(self.record(failed.id, ids["Line clearance"], decision="FAILED",
+                                     remarks="Residue found").status_code, 200)
+        skipped = self.registered(ids["Final grain"], batch_no="B-004").batch
+        self.assertEqual(self.mark(skipped.id, ids["Line clearance"]).status_code, 200)
+        added = self.registered(ids["Final grain"], batch_no="B-005").batch
+        self.assertEqual(self.add(added.id).status_code, 200)
+
+        batches = list(Batch.objects.all())
+        found = progress_many(batches)
+        self.assertEqual(found, {b.pk: progress(b) for b in batches})
+        self.assertIsNone(found[before.pk])
+        self.assertEqual(found[passed.pk], {"passed": 1, "required": 2, "failed": False})
+        self.assertTrue(found[failed.pk]["failed"])
+        self.assertEqual(found[skipped.pk]["required"], 1, "a stage that does not apply is not counted")
+        self.assertEqual(found[added.pk]["required"], 3, "a stage added to the batch is counted")
+
+    def test_the_list_takes_as_many_queries_for_many_batches_as_for_one(self):
+        from .stages import progress_many
+
+        ids = self.set_up_stages([LINE, GRAIN])
+        self.registered(ids["Final grain"], batch_no="B-001")
+
+        def queries():
+            with CaptureQueriesContext(connection) as q:
+                progress_many(Batch.objects.all())
+            return len(q)
+
+        one = queries()
+        for n in range(2, 7):
+            self.registered(ids["Final grain"], batch_no=f"B-00{n}")
+        self.assertEqual(queries(), one)
+        # The whole page stays small too: the batches and their count, their stages, the person asking.
+        self.login(self.approver)
+        with CaptureQueriesContext(connection) as q:
+            self.assertEqual(self.client.get("/api/batches/").status_code, 200)
+        self.assertLess(len(q), 25)
+
+    def test_each_batch_shows_the_version_of_the_stages_it_keeps(self):
+        before = self.register_sample().batch
+        ids = self.set_up_stages([LINE, GRAIN])
+        self.registered(ids["Final grain"], batch_no="B-002")
+        r = self.put_stages([LINE, GRAIN, FINISHED], reason="Finished product testing added")
+        self.assertEqual(r.status_code, 200, r.content)
+        newer = {s["name"]: s["id"] for s in r.data["current"]["stages"]}
+        self.registered(newer["Final grain"], batch_no="B-003")
+        self.login(self.approver)
+        rows = {row["official_batch_no"]: row for row in self.client.get("/api/batches/").data["results"]}
+        self.assertIsNone(rows[before.official_batch_no]["stage_plan"])
+        self.assertEqual(rows["B-002"]["stage_plan"], {"version": 1, "latest": 2})
+        self.assertEqual(rows["B-003"]["stage_plan"], {"version": 2, "latest": 2})
         self.assertEqual(self.client.get("/api/batches/?file=xlsx").status_code, 200)

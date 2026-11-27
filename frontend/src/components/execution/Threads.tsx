@@ -7,12 +7,14 @@ import Stamp from "../Stamp";
 function Composer({
   initial = "",
   withKind,
+  autoFocus,
   submitText,
   onSubmit,
   onCancel,
 }: {
   initial?: string;
   withKind?: boolean;
+  autoFocus?: boolean;
   submitText: string;
   onSubmit: (body: string, kind: "NOTE" | "FEEDBACK") => Promise<void>;
   onCancel?: () => void;
@@ -44,6 +46,7 @@ function Composer({
         placeholder="Write a note — it is kept on the record and cannot be deleted."
         maxLength={4000}
         aria-label={submitText}
+        autoFocus={autoFocus}
       />
       <div className="actions-bar">
         {withKind && (
@@ -107,6 +110,7 @@ function Comment({
         )}
         {mode && (
           <Composer
+            autoFocus
             initial={mode === "amend" ? c.body : ""}
             submitText={mode === "amend" ? "Save amendment" : "Reply"}
             onCancel={() => setMode(null)}
@@ -128,7 +132,8 @@ function Comment({
 
 /**
  * Notes and review feedback for a step. Nothing is edited or deleted: an
- * amendment is a new wording with the earlier ones kept beneath it.
+ * amendment is a new wording with the earlier ones kept beneath it. The box
+ * for a new note opens from its button, so a step with nothing to say stays short.
  */
 export default function Threads({
   sampleId,
@@ -136,6 +141,8 @@ export default function Threads({
   comments,
   userId,
   canComment,
+  writing,
+  onWriting,
   onChange,
 }: {
   sampleId: number;
@@ -143,6 +150,8 @@ export default function Threads({
   comments: CommentView[];
   userId: number;
   canComment: boolean;
+  writing: boolean;
+  onWriting: (open: boolean) => void;
   onChange: (e: Execution) => void;
 }) {
   const post = async (data: Record<string, unknown>) => {
@@ -151,15 +160,21 @@ export default function Threads({
 
   return (
     <div>
-      {comments.length === 0 ? (
-        !canComment && <div className="cell-sub">No notes yet.</div>
-      ) : (
+      {comments.length > 0 && (
         <ul className="comment-list">
           {comments.map((c) => <Comment key={c.id} c={c} userId={userId} canComment={canComment} post={post} depth={0} />)}
         </ul>
       )}
       {canComment ? (
-        <Composer withKind submitText="Post" onSubmit={(body, kind) => post({ body, kind })} />
+        writing ? (
+          <Composer withKind autoFocus submitText="Post" onCancel={() => onWriting(false)}
+            onSubmit={async (body, kind) => {
+              await post({ body, kind });
+              onWriting(false);
+            }} />
+        ) : (
+          <button type="button" className="ghost small note-add" onClick={() => onWriting(true)}>+ Add a note</button>
+        )
       ) : (
         <div className="cell-sub" style={{ marginTop: 10 }}>You can read these notes. Your role cannot add to them.</div>
       )}

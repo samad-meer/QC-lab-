@@ -1136,6 +1136,11 @@ export interface BatchRow {
   stage_options?: QcStageOption[];
   /** In the list only: where the batch's required QC stages stand. Null when it has none. */
   qc_progress?: { passed: number; required: number; failed: boolean } | null;
+  /**
+   * In the list only: the version of its product's QC stages the batch goes through, and the
+   * product's newest. Null for a batch created before its product had any.
+   */
+  stage_plan?: { version: number; latest: number } | null;
 }
 
 export interface BatchDocumentView {

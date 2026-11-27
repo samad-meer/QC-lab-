@@ -70,8 +70,13 @@ export default function Batches() {
             <table className="grid">
               <thead>
                 <tr>
-                  <th>Official batch no</th><th>Internal ID</th><th>Product</th><th>Site</th>
-                  <th>Manufactured</th><th>Expiry</th><th>Samples</th><th>QC stages</th>
+                  <th>Official batch no</th><th>Internal ID</th><th>Product</th>
+                  <th title="Manufacturing site: where the batch was made, when it is recorded">Site</th>
+                  <th>Manufactured</th><th>Expiry</th><th>Samples</th>
+                  <th title="The version of its product's QC stages the batch goes through, kept from when it was created">
+                    Stages version
+                  </th>
+                  <th>QC stages</th>
                 </tr>
               </thead>
               <tbody>
@@ -90,6 +95,20 @@ export default function Batches() {
                     <td>{b.manufacturing_date ? fmtDate(b.manufacturing_date) : "—"}</td>
                     <td>{b.expiry_date ? fmtDate(b.expiry_date) : "—"}</td>
                     <td className="num">{b.sample_count}</td>
+                    <td>
+                      {b.stage_plan ? (
+                        <>
+                          <span className="tag">v{b.stage_plan.version}</span>
+                          {b.stage_plan.latest > b.stage_plan.version && (
+                            <div className="cell-sub" title={`Batches created now go through version ${b.stage_plan.latest}; this one keeps the version it was created with.`}>
+                              current is v{b.stage_plan.latest}
+                            </div>
+                          )}
+                        </>
+                      ) : (
+                        <span className="cell-sub" title="Created before its product had QC stages">—</span>
+                      )}
+                    </td>
                     <td>
                       {b.qc_progress ? (
                         <>

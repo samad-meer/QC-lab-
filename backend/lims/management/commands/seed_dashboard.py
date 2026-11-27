@@ -25,7 +25,7 @@ from django.utils import timezone
 
 from batches.models import Batch
 from lims.models import Product, Sample, TestResult
-from ._demo_data import Api, DryRun, PASSWORD, Timeline, load_people, require_debug
+from ._demo_data import Api, DryRun, PASSWORD, Timeline, complete_receipt, load_people, require_debug
 
 PREFIX = "DM-"
 
@@ -174,38 +174,8 @@ class Command(BaseCommand):
         made = self.api("post", "/api/samples/", "frontdesk", body)
         self.made[n] = {"id": made["id"], "analyst": analyst, "code": code}
 
-    def _answer(self, item: dict):
-        """An answer that meets a receipt check, whatever kind of check it is."""
-        kind = item["response_type"]
-        if kind == "CHECKBOX":
-            return "true"
-        if kind == "YES_NO":
-            return item["expected"] or "YES"
-        if kind == "PASS_FAIL":
-            return "PASS"
-        if kind == "NUMBER":
-            low, high = item["min_value"], item["max_value"]
-            if low is not None and high is not None:
-                return str((Decimal(low) + Decimal(high)) / 2)
-            return str(Decimal(low) + 1) if low is not None else (str(Decimal(high) - 1) if high is not None else "1")
-        if kind == "TEXT":
-            return "As expected"
-        if kind == "DATE":
-            return timezone.localdate().isoformat()
-        if kind == "CHOICE":
-            return item["expected"] or item["options"][0]
-        raise CommandError(f"The receipt check “{item['label']}” asks for a file, which a demo sample cannot give.")
-
     def complete_receipt(self, n):
-        sample_id = self.made[n]["id"]
-        state = self.api("get", f"/api/samples/{sample_id}/execution/", "frontdesk")
-        receipt = next((step for step in state["steps"] if step["kind"] == "receipt"), None)
-        if receipt is None or receipt["status"] == "COMPLETED":
-            return
-        for row in receipt["checklist"]:
-            self.api("post", f"/api/samples/{sample_id}/checklist/", "frontdesk",
-                     {"item_id": row["item"]["id"], "value": self._answer(row["item"])})
-        self.api("post", f"/api/samples/{sample_id}/receipt/complete/", "frontdesk", {})
+        complete_receipt(self.api, self.made[n]["id"])
 
     def _value(self, test, failing: bool):
         """A result inside the limit, or just outside it for the one a failure is made from."""

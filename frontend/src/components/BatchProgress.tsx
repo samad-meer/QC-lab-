@@ -97,6 +97,8 @@ export default function BatchProgress({ batch, forStageId }: {
       navigate(`/batches/${batch.id}${id === null ? "" : `#stage-${id}`}`);
       return;
     }
+    // The stage goes in the address too, so the stages below open it if it is closed.
+    if (id !== null) navigate({ hash: `#stage-${id}` }, { replace: true });
     const el = id === null ? document.querySelector('section[aria-label="Disposition"]') : document.getElementById(`stage-${id}`);
     el?.scrollIntoView({ block: "start", behavior: "smooth" });
   };

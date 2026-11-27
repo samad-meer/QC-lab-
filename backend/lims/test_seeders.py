@@ -86,3 +86,61 @@ class SeedFloxcipTests(TestCase):
                        if CalibrationEvent.objects.filter(instrument=i).order_by("-id").first().next_due < today]
         self.assertEqual(overdue, ["HPLC-01"], "only the instrument that is meant to be overdue may be")
         self.assertTrue(Batch.objects.filter(official_batch_no="26FB017").exists())
+
+
+@override_settings(DEBUG=True)
+class SeedFloxcipBatchesTests(TestCase):
+    """seed_floxcip_batches adds the batches made after 26FB017, so QA has Floxcip work to sign."""
+
+    @classmethod
+    def setUpTestData(cls):  # seeded once for the class: the tests only read it
+        seed("seed_demo")
+        seed("seed_floxcip")
+        seed("seed_floxcip_batches")
+
+    def added(self):
+        return Sample.objects.filter(batch_no__in=["26FB019", "26FB020", "26FB021"]).select_related("qc_stage")
+
+    def test_three_samples_wait_in_qas_queue(self):
+        from lims.workflow import review_queue
+
+        queue = review_queue(User.objects.get(username="qa.officer"))
+        self.assertEqual(sorted(queue.values_list("batch_no", "qc_stage__name")), [
+            ("26FB020", "Core tablets"), ("26FB020", "Final grain"), ("26FB021", "Final grain")])
+
+    def test_each_sample_is_as_far_as_it_would_have_got(self):
+        where = {(s.batch_no, s.qc_stage.name): s.status for s in self.added()}
+        self.assertEqual(where, {
+            ("26FB019", "Final grain"): "APPROVED", ("26FB019", "Core tablets"): "APPROVED",
+            ("26FB020", "Final grain"): "IN_REVIEW", ("26FB020", "Core tablets"): "IN_REVIEW",
+            ("26FB021", "Final grain"): "IN_REVIEW", ("26FB021", "Core tablets"): "IN_TESTING",
+        })
+        self.assertFalse(TestResult.objects.filter(sample__in=self.added(), outcome="FAIL").exists())
+
+    def test_the_work_is_spread_over_the_last_week(self):
+        today = timezone.localdate()
+        received = sorted(timezone.localtime(s.received_at).date() for s in self.added())
+        self.assertEqual((received[0], received[-1]), (today - datetime.timedelta(days=7),
+                                                       today - datetime.timedelta(days=1)))
+        # Nothing waiting for QA is late: each was due a few days after it arrived, testing and reviews included.
+        waiting = self.added().filter(status="IN_REVIEW")
+        self.assertFalse(waiting.filter(due_date__lt=today).exists())
+
+    def test_it_runs_only_once_and_says_so(self):
+        with self.assertRaisesMessage(CommandError, "already on record"):
+            seed("seed_floxcip_batches")
+        self.assertEqual(self.added().count(), 6)
+
+
+@override_settings(DEBUG=True)
+class SeedFloxcipBatchesFirstTests(TestCase):
+    def test_it_needs_seed_floxcip_first(self):
+        seed("seed_demo")
+        with self.assertRaisesMessage(CommandError, "Run seed_floxcip first"):
+            seed("seed_floxcip_batches")
+
+    def test_a_dry_run_leaves_nothing_behind(self):
+        seed("seed_demo")
+        seed("seed_floxcip")
+        seed("seed_floxcip_batches", dry_run=True)
+        self.assertFalse(Batch.objects.filter(official_batch_no__in=["26FB019", "26FB020", "26FB021"]).exists())

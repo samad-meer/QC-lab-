@@ -63,6 +63,7 @@ Backend — **port 8007**:
 ```powershell
 .venv\Scripts\python.exe manage.py seed_demo      # demo users + products
 .venv\Scripts\python.exe manage.py seed_floxcip   # optional: Floxcip 500 mg, batch 26FB017
+.venv\Scripts\python.exe manage.py seed_floxcip_batches # optional, after it: three more Floxcip batches
 .venv\Scripts\python.exe manage.py seed_dashboard # optional: three weeks of lab work, for the dashboard
 .venv\Scripts\python.exe manage.py seed_production # optional: a batch record and four production batches
 .venv\Scripts\python.exe manage.py runserver      # defaults to 8007
@@ -78,9 +79,9 @@ three-stage batch record (dispensing, granulation and drying, compression) and f
 batches at different points in it, one of them assigned to the operator and not yet
 written, so production's screens have work too.
 
-Both go through the same API as the screens, signed by the demo accounts, so every rule,
-password signature and audit entry applies. They are the only seeders that date their
-records in the past: each step runs on a clock that moves from three weeks ago to now, in
+These go through the same API as the screens, signed by the demo accounts, so every rule,
+password signature and audit entry applies. They and `seed_floxcip_batches` (below) are the only seeders that date their
+records in the past: each step runs on a clock that moves from a few weeks ago to now, in
 the order the work would have happened, so a trend has more than one day in it and the
 audit trail still reads in order. Nothing is edited afterwards. Run `seed_demo` first;
 add `--dry-run` to see them work and roll back. Each runs once and refuses if its records
@@ -97,6 +98,13 @@ through the same API as the screens, so the audit trail is complete. Run `seed_d
 first, because it needs the demo accounts; add `--dry-run` to see it work and roll back,
 or `--pdf PATH` to attach a scanned record. It runs once and refuses if Floxcip is
 already on record. Like `seed_demo`, it never runs outside `DEBUG`.
+
+`seed_floxcip_batches`, run after `seed_floxcip`, adds the Floxcip batches made since:
+26FB019 with both samples approved, 26FB020 with both checked by QC and waiting for QA's
+review, and 26FB021 with Final grain waiting for QA and Core tablets still being tested.
+So the QA officer has Floxcip certificates to sign and the analysts have one in hand. It
+uses the instruments, standards and reagents `seed_floxcip` entered, and, like
+`seed_dashboard`, dates its work over the last week.
 
 Frontend (port 5173, proxies /api and /verify to the backend):
 

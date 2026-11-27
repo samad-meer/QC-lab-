@@ -29,7 +29,7 @@ from accounts.authz import OVERRIDE, has_perm, overrides
 from accounts.passwords import confirm_password
 from audit.services import record
 from certificates.models import CertStatus, Certificate
-from lims.models import SampleStatus
+from lims.models import Sample, SampleStatus
 from .models import (
     Batch, BatchCheckpointEntry, BatchStageApplicability, BatchStageAssignment, BatchStageResult, BatchStageSignature,
     DispositionDecision, QcCheckpoint, QcStage, QcStagePlan, StageDecision, StageKind,
@@ -239,14 +239,19 @@ def stages_of(batch: Batch) -> list[QcStage]:
     return sorted(own + extra, key=lambda s: s.order)
 
 
-def _tested_status(samples) -> str:
+def _approved_ids(samples) -> set[int]:
+    """The samples among these with an approved certificate in force."""
+    if not samples:
+        return set()
+    return set(Certificate.objects.filter(sample__in=samples, status=CertStatus.APPROVED)
+               .values_list("sample_id", flat=True))
+
+
+def _tested_status(samples, in_force: set[int]) -> str:
     if not samples:
         return NOT_STARTED
     if any(s.status == SampleStatus.REJECTED for s in samples):
         return FAILED
-    in_force = set(
-        Certificate.objects.filter(sample__in=samples, status=CertStatus.APPROVED).values_list("sample_id", flat=True)
-    )
     if all(s.status == SampleStatus.APPROVED and s.pk in in_force for s in samples):
         return PASSED
     return IN_PROGRESS
@@ -273,11 +278,19 @@ def batch_stages(batch: Batch) -> list[dict]:
     if not stages:
         return []
     samples = list(batch.samples.exclude(status=SampleStatus.CANCELLED).filter(qc_stage__in=stages))
-    results = list(batch.stage_results.select_related("recorded_by").order_by("id"))
-    marks = list(batch.stage_applicability.select_related("recorded_by").order_by("id"))
-    entries = list(batch.checkpoint_entries.select_related("entered_by").order_by("id"))
-    signatures = list(batch.stage_signatures.select_related("signed_by").order_by("id"))
-    assigned = list(batch.stage_assignments.select_related("assignee", "assigned_by").order_by("id"))
+    return _stage_rows(
+        stages, samples,
+        results=list(batch.stage_results.select_related("recorded_by").order_by("id")),
+        marks=list(batch.stage_applicability.select_related("recorded_by").order_by("id")),
+        entries=list(batch.checkpoint_entries.select_related("entered_by").order_by("id")),
+        signatures=list(batch.stage_signatures.select_related("signed_by").order_by("id")),
+        assigned=list(batch.stage_assignments.select_related("assignee", "assigned_by").order_by("id")),
+        in_force=_approved_ids(samples),
+    )
+
+
+def _stage_rows(stages, samples, *, results, marks, entries, signatures, assigned, in_force) -> list[dict]:
+    """Where each of one batch's stages stands, from everything recorded for that batch."""
     rows = []
     for stage in stages:
         mine = [s for s in samples if s.qc_stage_id == stage.pk]
@@ -295,7 +308,7 @@ def batch_stages(batch: Batch) -> list[dict]:
         if applicability and not applicability[-1].applies:
             status = NOT_APPLICABLE
         elif stage.kind == StageKind.TESTED:
-            status = _tested_status(mine)
+            status = _tested_status(mine, in_force)
         elif sheet is not None:
             # Filled and signed on the batch record: passed once every column is signed.
             status = PASSED if sheet["signed_all"] else IN_PROGRESS if sheet["touched"] else NOT_STARTED
@@ -351,8 +364,60 @@ def stage_problems(batch: Batch) -> list[str]:
 
 
 def progress(batch: Batch) -> dict | None:
-    """“2 of 4 required passed”, for a list of batches. None for a batch with no stages."""
-    rows = batch_stages(batch)
+    """“2 of 4 required passed”, for one batch. None for a batch with no stages."""
+    return _progress(batch_stages(batch))
+
+
+def progress_many(batches) -> dict[int, dict | None]:
+    """
+    progress() for a page of batches at once, keyed by batch: the same answer, judged
+    the same way, but loaded in a dozen queries for the whole page instead of several
+    for each batch.
+    """
+    batches = list(batches)
+    if not batches:
+        return {}
+    ids = [b.pk for b in batches]
+
+    def by_batch(qs):
+        out: dict[int, list] = {}
+        for row in qs:
+            out.setdefault(row.batch_id, []).append(row)
+        return out
+
+    plans: dict[int, list] = {}
+    for stage in QcStage.objects.filter(plan_id__in={b.stage_plan_id for b in batches if b.stage_plan_id}) \
+            .prefetch_related(*TEMPLATE):
+        plans.setdefault(stage.plan_id, []).append(stage)
+    extra = by_batch(QcStage.objects.filter(batch_id__in=ids).select_related("added_by").prefetch_related(*TEMPLATE))
+    stages = {b.pk: sorted(plans.get(b.stage_plan_id, []) + extra.get(b.pk, []), key=lambda s: s.order)
+              for b in batches}
+    staged = [pk for pk in ids if stages[pk]]
+    if not staged:
+        return {pk: None for pk in ids}
+    every_stage = [st.pk for pk in staged for st in stages[pk]]
+    samples = by_batch(Sample.objects.filter(batch_id__in=staged, qc_stage_id__in=every_stage)
+                       .exclude(status=SampleStatus.CANCELLED))
+    in_force = _approved_ids([sm for rows in samples.values() for sm in rows])
+    results = by_batch(BatchStageResult.objects.filter(batch_id__in=staged).select_related("recorded_by").order_by("id"))
+    marks = by_batch(BatchStageApplicability.objects.filter(batch_id__in=staged)
+                     .select_related("recorded_by").order_by("id"))
+    entries = by_batch(BatchCheckpointEntry.objects.filter(batch_id__in=staged)
+                       .select_related("entered_by").order_by("id"))
+    signatures = by_batch(BatchStageSignature.objects.filter(batch_id__in=staged)
+                          .select_related("signed_by").order_by("id"))
+    assigned = by_batch(BatchStageAssignment.objects.filter(batch_id__in=staged)
+                        .select_related("assignee", "assigned_by").order_by("id"))
+    out: dict[int, dict | None] = {pk: None for pk in ids}
+    for pk in staged:
+        mine = [sm for sm in samples.get(pk, []) if sm.qc_stage_id in {st.pk for st in stages[pk]}]
+        out[pk] = _progress(_stage_rows(
+            stages[pk], mine, results=results.get(pk, []), marks=marks.get(pk, []), entries=entries.get(pk, []),
+            signatures=signatures.get(pk, []), assigned=assigned.get(pk, []), in_force=in_force))
+    return out
+
+
+def _progress(rows: list[dict]) -> dict | None:
     if not rows:
         return None
     required = [r for r in rows if r["stage"].required and r["status"] != NOT_APPLICABLE]

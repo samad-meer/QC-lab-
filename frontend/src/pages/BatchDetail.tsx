@@ -197,7 +197,7 @@ export default function BatchDetailPage() {
         </div>
       </div>
 
-      <BatchStages batch={batch} onChange={setBatch} />
+      <BatchStages key={batch.id} batch={batch} onChange={setBatch} />
       <DispositionCard batch={batch} onChange={setBatch} />
 
       <div className="card">

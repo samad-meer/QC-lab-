@@ -1,13 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiGet, apiPost } from "../api";
 import BottleProgress from "../components/BottleProgress";
 import CommentModal from "../components/CommentModal";
 import HoldBar from "../components/execution/HoldBar";
 import OverrideNotice from "../components/execution/OverrideNotice";
-import StepPanel from "../components/execution/StepPanel";
 import { useExecution } from "../components/execution/useExecution";
 import FailureHistory from "../components/FailureHistory";
+import JourneyStepCard from "../components/JourneyStepCard";
 import { Message, TableSkeleton } from "../components/Feedback";
 import ResultGauges from "../components/ResultGauges";
 import SampleHero from "../components/SampleHero";
@@ -37,6 +37,9 @@ export default function Review() {
   const [modal, setModal] = useState<"sign" | "back" | null>(null);
   const [loadError, setLoadError] = useState("");
   const { exec, setExec, error: execError } = useExecution(id);
+  // The journey step opened below; until one is picked, the step the sample is at.
+  const [viewing, setViewing] = useState<string | null>(null);
+  const detailRef = useRef<HTMLElement>(null);
 
   const load = useCallback(async () => {
     try {
@@ -80,6 +83,11 @@ export default function Review() {
   const steps = journeySteps(sample.status, cert.stages, sample.review_stage_order, cert.prints.length > 0, names);
   const done = steps.filter((s) => s.state === "done").length;
   const currentIndex = steps.findIndex((s) => s.state === "current");
+  const shown = viewing ?? steps[currentIndex]?.key ?? steps[steps.length - 1].key;
+  const open = (key: string) => {
+    setViewing(key);
+    detailRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
 
   // The stage's own requirements, exactly as the server will check them on signing.
   const stageStep = stage ? exec?.steps.find((s) => s.key === stage.code) : undefined;
@@ -185,12 +193,12 @@ export default function Review() {
 
       <div style={{ display: "flex", flexWrap: "wrap", gap: 18, alignItems: "stretch", marginBottom: 18 }}>
         <section className="card" style={{ flex: "4 1 340px", minWidth: 0, margin: 0 }} aria-label="Journey">
-          <div className="card-head"><h2>Journey</h2><span className="hint">{done} of {steps.length} steps done</span></div>
+          <div className="card-head"><h2>Journey</h2><span className="hint">{done} of {steps.length} steps done · open any step</span></div>
           <div className="card-body">
-            <BottleProgress steps={steps} mine={mine} />
+            <BottleProgress steps={steps} mine={mine} selected={shown} onSelect={open} />
           </div>
         </section>
-        <section className="card" style={{ flex: "6 1 520px", minWidth: 0, margin: 0 }} aria-label="Results">
+        <section className="card" id="results" style={{ flex: "6 1 520px", minWidth: 0, margin: 0 }} aria-label="Results">
           <div className="card-head">
             <h2>Results against limits</h2>
             <span className="hint">Arc = allowed range · dot = result · frozen when the analyst signed</span>
@@ -201,19 +209,18 @@ export default function Review() {
         </section>
       </div>
 
-      {exec && stageStep && (
-        <section className="card" aria-label="This stage">
-          <div className="card-head">
-            <h2>{stage ? `“${stage.name}” — this stage's checks` : "This stage"}</h2>
-            <span className="hint">Checklist, files and notes for this review · each with who and exactly when</span>
-            <div className="spacer" />
-            <HoldBar sampleId={sample.id} exec={exec} onChange={onExec} variant="button" />
-          </div>
-          <div className="card-body">
-            <StepPanel sampleId={sample.id} exec={exec} step={stageStep} onChange={onExec} />
-          </div>
-        </section>
-      )}
+      <JourneyStepCard
+        ref={detailRef}
+        steps={steps}
+        selected={shown}
+        onSelect={setViewing}
+        mine={mine}
+        sample={sample}
+        cert={cert}
+        exec={exec}
+        onExec={onExec}
+        actions={exec && <HoldBar sampleId={sample.id} exec={exec} onChange={onExec} variant="button" />}
+      />
 
       <div className="card">
         <div className="card-head">
