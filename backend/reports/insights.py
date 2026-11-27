@@ -379,7 +379,7 @@ def _average(values):
     return sum(values) / len(values)
 
 
-def scorecard(user, window, period, samples, results, unit, buckets, equipment_now) -> dict:
+def scorecard(user, window, period, samples, results, unit, buckets, equipment_now, waiting=None) -> dict:
     """
     The lab at a glance as a scorecard: dials for how results and release went, a table by product (and by
     analyst, for whoever may plan work), the failure rate by section, and the limits the lab has to stay within.
@@ -461,16 +461,16 @@ def scorecard(user, window, period, samples, results, unit, buckets, equipment_n
         "limits": _limits(user, samples, equipment_now),
     }
     if has_perm(user, "report.performance"):
-        card["analysts"] = _analysts(user, unit, buckets, released)
+        card["analysts"] = _analysts(user, unit, buckets, released, waiting)
     return card
 
 
-def _analysts(user, unit, buckets, released) -> list[dict]:
+def _analysts(user, unit, buckets, released, waiting=None) -> list[dict]:
     """What each analyst holds and how long release took for them: for planning the work, not for ranking people."""
     from .workflow import waiting_work  # the workflow reports read this module's filters
 
     open_work = defaultdict(lambda: {"open": 0, "overdue": 0, "name": ""})
-    for row in waiting_work(user):
+    for row in waiting if waiting is not None else waiting_work(user):
         mine = open_work[row["analyst_id"]]
         mine["name"] = row["analyst_name"]
         mine["open"] += 1

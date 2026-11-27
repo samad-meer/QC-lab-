@@ -528,9 +528,11 @@ someone to fill, investigations, and CAPA actions.
   did and signed (read from the activity log, so it is the same record an inspector
   sees), and what they still hold. It opens on the signed-in person ("Me") with *This
   week*, and filters by month, any dates and kind of work. The **PDF to print** button
-  heads the page with whose report it is. Everyone may open and print their own;
-  choosing another person needs `report.performance`, and printing another person's
-  needs `report.export`. It counts actions, which say nothing about how hard the work
+  heads the page with whose report it is. Everyone may open their own on screen;
+  printing or downloading it needs "Print their own activity" (`report.print.own`),
+  which the administrator gives role by role on the Roles screen. Choosing another
+  person needs `report.performance`, and printing another person's, or any other
+  report, needs `report.export`. It counts actions, which say nothing about how hard the work
   was, so like Analyst Workload it is for planning and not a ranking.
 
 `accounts/0028` gives every active role "Open reports" with Person Activity and nothing

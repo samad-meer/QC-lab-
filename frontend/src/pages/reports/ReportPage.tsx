@@ -77,6 +77,9 @@ function ReportBody({ def }: { def: ReportDefinition }) {
             {def.can_export && (
               <ExportButtons url={`/api/reports/${def.key}/export/?${new URLSearchParams(query).toString()}`} />
             )}
+            {!def.can_export && def.key === "person-activity" && (
+              <span className="hint">To print it, your administrator gives your role “Print their own activity”.</span>
+            )}
           </>
         }
         filters={

@@ -160,6 +160,10 @@ MODULES: list[tuple[str, str, list[tuple[str, str, str]]]] = [
             ("report.export", "Export reports",
              "Download reports as CSV, Excel or PDF, and lists such as samples, batches and users as "
              "Excel or PDF. Every export is recorded in the activity log."),
+            ("report.print.own", "Print their own activity",
+             "Print or download their own Person Activity report, for a week, a month or any dates. Without "
+             "it they can still read it on screen. Printing anyone else's, and every other report, takes "
+             "Export reports. Every print is recorded in the activity log."),
             ("report.performance", "See workload on the overview",
              "Show what each analyst holds on the Reports overview, and choose any person in Person Activity "
              "instead of only yourself. For planning the lab's work, not for ranking people. The workload "
@@ -290,6 +294,8 @@ LAB_REGISTER_VIEWS = tuple(INCLUDED_WITH)
 # A permission that does nothing without another: a report stays shut without
 # "Open reports". The Roles screen says so beside it.
 NEEDS: dict[str, str] = {report_permission(key): "report.view" for key, *_ in REPORTS}
+# Printing one's own activity needs the report it prints.
+NEEDS["report.print.own"] = report_permission("person-activity")
 
 # How the Roles screen groups the long lists: the reports, by what they are about.
 GROUPS: dict[str, str] = {report_permission(key): group for key, _, _, group in REPORTS}

@@ -78,12 +78,14 @@ function readTab(): TabKey {
  * failed, whether the equipment is in date. Each figure opens the records it counts, and a chart with
  * nothing to show to this person is left out rather than drawn empty.
  */
-export default function LabGlance({ data, period, busy = false, note, onPeriod }: {
+export default function LabGlance({ data, period, busy = false, refreshing = false, note, onPeriod }: {
   data: ReportDashboard;
   /** Where the period is chosen here. A page with a date filter of its own leaves both out. */
   period?: GlancePeriod;
   /** The period was just changed and the new figures are on the way: the old ones stay, dimmed. */
   busy?: boolean;
+  /** Last visit's figures are on screen and the fresh ones are on the way. */
+  refreshing?: boolean;
   /** Said above the figures, such as why they cover a wider stretch than was asked for. */
   note?: string;
   onPeriod?: (next: GlancePeriod) => void;
@@ -183,6 +185,9 @@ export default function LabGlance({ data, period, busy = false, note, onPeriod }
     <section className="card" aria-label="Lab at a glance">
       <div className="card-head">
         <h2>Lab at a glance</h2>
+        {(refreshing || busy) && (
+          <span className="glance-refresh" role="status"><i className="spin" aria-hidden="true" />Updating…</span>
+        )}
         <span className="hint">{data.label} · {data.scope}{ins.compare ? ` · changes are against ${ins.compare}` : ""}</span>
         <div className="spacer" />
         {onPeriod && period && (
@@ -332,6 +337,38 @@ export default function LabGlance({ data, period, busy = false, note, onPeriod }
               </>
             )}
           </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/** What shows while the figures are on their way: the shape of the glance, so nothing jumps when they come. */
+export function GlanceSkeleton() {
+  return (
+    <section className="card glance-loading" aria-label="Lab at a glance" aria-busy="true">
+      <div className="card-head">
+        <h2>Lab at a glance</h2>
+        <span className="glance-refresh" role="status"><i className="spin" aria-hidden="true" />Loading the lab&apos;s figures…</span>
+      </div>
+      <div className="card-body glance-body">
+        <div className="kpi-strip">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="kpi kpi-sk" aria-hidden="true">
+              <span className="sk sk-dot" />
+              <span className="sk sk-line" />
+              <span className="sk sk-big" />
+              <span className="sk sk-line" />
+            </div>
+          ))}
+        </div>
+        <div className="glance">
+          {Array.from({ length: 3 }, (_, i) => (
+            <div key={i} className="glance-card third" aria-hidden="true">
+              <span className="sk sk-line" />
+              <span className="sk sk-chart" />
+            </div>
+          ))}
         </div>
       </div>
     </section>

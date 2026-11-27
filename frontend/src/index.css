@@ -3430,3 +3430,35 @@ a.lab-now-tile:focus-visible { outline: 2px solid var(--focus); outline-offset: 
 /* A lone tile keeps its size instead of stretching across the card. */
 .dash2-tiles { grid-template-columns: repeat(auto-fill, minmax(min(170px, 100%), 1fr)); }
 @media (max-width: 520px) { .lab-now-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } .lab-now-tile { padding: 10px; gap: 2px 8px; } .lab-now-ico { width: 34px; height: 34px; } }
+
+/* Loading: a placeholder shaped like the glance, a spinner that says what is happening, and a thin bar
+   across the top of the card while figures are on their way. */
+@keyframes qc-spin { to { transform: rotate(360deg); } }
+@keyframes qc-bar { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+.spin {
+  display: inline-block; flex: none; width: 13px; height: 13px; border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--chart-4) 25%, transparent); border-top-color: var(--chart-4);
+  animation: qc-spin 0.8s linear infinite;
+}
+.glance-refresh {
+  display: inline-flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 700;
+  color: color-mix(in srgb, var(--chart-4) 80%, #000); background: color-mix(in srgb, var(--chart-4) 10%, var(--surface));
+}
+:root[data-theme="dark"] .glance-refresh { color: var(--chart-4); }
+.card:has(.glance-refresh), .glance-loading { position: relative; overflow: hidden; }
+.card:has(> .card-head .glance-refresh)::before, .glance-loading::before {
+  content: ""; position: absolute; top: 0; left: 0; z-index: 2; width: 40%; height: 3px; border-radius: 3px;
+  background: linear-gradient(90deg, transparent, var(--chart-4), transparent); animation: qc-bar 1.2s ease-in-out infinite;
+}
+.kpi-sk { display: grid; justify-items: center; gap: 10px; min-height: 150px; pointer-events: none; }
+.kpi-sk:hover { transform: none; box-shadow: none; }
+.sk-dot { width: 44px; height: 44px; border-radius: 50%; }
+.sk-line { width: 80%; height: 12px; }
+.sk-big { width: 50%; height: 30px; border-radius: 8px; }
+.sk-chart { display: block; width: 100%; height: 160px; margin-top: 12px; border-radius: 12px; }
+@media (prefers-reduced-motion: reduce) {
+  .spin, .sk, .card:has(> .card-head .glance-refresh)::before, .glance-loading::before { animation: none; }
+}
+
+/* The workflow version in use, in its history. */
+.grid tr.ver-current > td { background: color-mix(in srgb, var(--pass) 7%, transparent); }

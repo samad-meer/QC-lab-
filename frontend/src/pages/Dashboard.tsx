@@ -5,7 +5,7 @@ import { LAB_REGISTER_VIEWS, useAuth } from "../auth";
 import { DonutChart } from "../components/Charts";
 import type { DonutSlice } from "../components/Charts";
 import { Message } from "../components/Feedback";
-import LabGlance from "../components/LabGlance";
+import LabGlance, { GlanceSkeleton } from "../components/LabGlance";
 import type { GlancePeriod } from "../components/LabGlance";
 import LineIcon from "../components/LineIcon";
 import type { IconName } from "../components/LineIcon";
@@ -13,6 +13,7 @@ import { NotificationList, useNotifications } from "../components/Notifications"
 import { TimelineChart } from "../components/reports/LineCharts";
 import Stamp from "../components/Stamp";
 import type { BatchRow, BatchStageTask, Page, ReportDashboard, Summary, TaskBucket, Tasks } from "../types";
+import { remember, remembered } from "../stale";
 import { fmtNow } from "../util";
 
 const Icon = LineIcon;
@@ -97,10 +98,15 @@ function LoadingCard({ title, chart = false }: { title: string; chart?: boolean 
 export default function Dashboard() {
   const { user, can, titles } = useAuth();
   const { data: notes, markAll } = useNotifications();
-  const [tasks, setTasks] = useState<Tasks | null>(null);
-  const [summary, setSummary] = useState<Summary | null>(null);
+  // What this tab last had shows at once, while the fresh answer is fetched.
+  const who = user?.id;
+  const [tasks, setTasks] = useState<Tasks | null>(() => remembered<Tasks>(who, "tasks") ?? null);
+  const [summary, setSummary] = useState<Summary | null>(() => remembered<Summary>(who, "summary") ?? null);
   // undefined while on the way; null when it could not be had, and the card then stays away.
-  const [month, setMonth] = useState<ReportDashboard | null | undefined>(undefined);
+  const [month, setMonth] = useState<ReportDashboard | null | undefined>(
+    () => remembered<ReportDashboard>(who, "dashboard:month"));
+  // Figures from the last visit are on screen and the fresh ones are on the way.
+  const [refreshing, setRefreshing] = useState(() => remembered(who, "dashboard:month") !== undefined);
   const [batches, setBatches] = useState<BatchRow[] | null | undefined>(undefined);
   const [error, setError] = useState("");
   const [now, setNow] = useState(() => new Date());
@@ -121,9 +127,12 @@ export default function Dashboard() {
   const load = useCallback(async (quietly = false) => {
     const get = quietly ? apiPoll : apiGet;
     try {
-      const [t, s] = await Promise.all([get<Tasks>("/api/tasks/"), get<Summary>("/api/summary/")]);
+      // Only the counts: what each sample still needs is the Tasks page's to work out.
+      const [t, s] = await Promise.all([get<Tasks>("/api/tasks/?counts=1"), get<Summary>("/api/summary/")]);
       setTasks(t);
       setSummary(s);
+      remember(who, "tasks", t);
+      remember(who, "summary", s);
       setError("");
     } catch (err) {
       if (!quietly) setError(err instanceof Error ? err.message : "Could not load the dashboard.");
@@ -135,7 +144,7 @@ export default function Dashboard() {
         .then((p) => setBatches(p.results))
         .catch(() => setBatches((b) => b ?? null));
     }
-  }, [seesBatches]);
+  }, [seesBatches, who]);
 
   useEffect(() => {
     void load();
@@ -168,8 +177,10 @@ export default function Dashboard() {
           }
           setMonth(d);
           setGlanceBusy(false);
+          setRefreshing(false);
+          remember(who, `dashboard:${period}`, d);
         })
-        .catch(() => { if (current) { setMonth((m) => m ?? null); setGlanceBusy(false); } });
+        .catch(() => { if (current) { setMonth((m) => m ?? null); setGlanceBusy(false); setRefreshing(false); } });
     };
     fetchGlance(false);
     const refresh = window.setInterval(() => fetchGlance(true), REFRESH_MS);
@@ -177,7 +188,7 @@ export default function Dashboard() {
       current = false;
       window.clearInterval(refresh);
     };
-  }, [overview, period]);
+  }, [overview, period, who]);
 
   if (!user) return null;
   const first = firstName(user.name);
@@ -326,14 +337,27 @@ export default function Dashboard() {
         </div>
       </section>
 
-      {overview && month === undefined && <LoadingCard title="Lab at a glance" chart />}
+      {overview && month === undefined && <GlanceSkeleton />}
       {overview && month && (
         <LabGlance
           data={month}
           period={period}
           busy={glanceBusy}
+          refreshing={refreshing}
           note={widened && period === "quarter" ? "Nothing has happened in the lab this month yet, so this shows the last 90 days." : undefined}
-          onPeriod={(next) => { picked.current = true; setWidened(false); setGlanceBusy(true); setPeriod(next); }}
+          onPeriod={(next) => {
+            picked.current = true;
+            setWidened(false);
+            // A period seen before in this tab shows at once and is refreshed; a new one dims the old figures.
+            const seen = remembered<ReportDashboard>(who, `dashboard:${next}`);
+            if (seen) {
+              setMonth(seen);
+              setRefreshing(true);
+            } else {
+              setGlanceBusy(true);
+            }
+            setPeriod(next);
+          }}
         />
       )}
 

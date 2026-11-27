@@ -237,9 +237,11 @@ def build(request) -> dict:
     }
     if has_perm(user, "sample.view.all") or has_perm(user, "batch.view.all"):
         charts["batches"] = _batch_decisions(user, window)
-    if has_perm(user, "report.performance"):
+    # What each analyst holds is worked out once, for the bars here and the scorecard's table.
+    work_rows = waiting_work(user) if has_perm(user, "report.performance") else None
+    if work_rows is not None:
         work = defaultdict(lambda: {"pending": 0, "overdue": 0})
-        for row in waiting_work(user):
+        for row in work_rows:
             person = work[(row["analyst_name"], row["analyst_id"])]
             person["pending"] += 1
             person["overdue"] += 1 if row["overdue_days"] > 0 else 0
@@ -262,7 +264,7 @@ def build(request) -> dict:
     kit = insights.equipment(user)
     if kit:
         deeper["equipment"] = kit
-    deeper["scorecard"] = insights.scorecard(user, window, period, samples, scope_results, unit, buckets, kit)
+    deeper["scorecard"] = insights.scorecard(user, window, period, samples, scope_results, unit, buckets, kit, work_rows)
 
     return {
         **stamp(request),

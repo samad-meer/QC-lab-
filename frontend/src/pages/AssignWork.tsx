@@ -48,7 +48,7 @@ export default function AssignWork() {
 
   const loadOverview = useCallback(() => {
     apiGet<Overview>("/api/assign/overview/").then(setOverview).catch((e) => setError(e instanceof Error ? e.message : "Could not load who holds what."));
-    apiGet<Tasks>("/api/tasks/").then((t) => setDeclined(t.counts.needs_reassigning)).catch(() => undefined);
+    apiGet<Tasks>("/api/tasks/?counts=1").then((t) => setDeclined(t.counts.needs_reassigning)).catch(() => undefined);
   }, []);
   useEffect(() => {
     loadOverview();

@@ -361,8 +361,13 @@ class PersonActivity(Report):
         return f"{person.display_name()} ({role})" if role else person.display_name()
 
     def may_export(self, request) -> bool:
-        """Anyone may print their own week. Printing someone else's takes the right to export reports."""
-        return has_perm(request.user, "report.export") or self._person(request).pk == request.user.pk
+        """
+        Printing one's own takes "Print their own activity", which the administrator gives role by role;
+        printing someone else's takes the right to export reports. Reading it on screen takes neither.
+        """
+        if has_perm(request.user, "report.export"):
+            return True
+        return self._person(request).pk == request.user.pk and has_perm(request.user, "report.print.own")
 
     def records(self, request):
         person = self._person(request)

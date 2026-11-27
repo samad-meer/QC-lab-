@@ -221,8 +221,13 @@ function HistoryModal({ workflow, onClose }: { workflow: WorkflowAdmin; onClose:
               </thead>
               <tbody>
                 {rows.map((v) => (
-                  <tr key={v.version}>
-                    <td className="num">v{v.version}</td>
+                  <tr key={v.version} className={v.version === workflow.version ? "ver-current" : undefined}>
+                    <td className="num">
+                      v{v.version}
+                      {v.version === workflow.version
+                        ? <div><span className="badge pass">In use</span></div>
+                        : <div className="cell-sub">Earlier version</div>}
+                    </td>
                     <td>
                       {requirementsText(v.receipt?.checklist ?? []) && (
                         <div className="cell-sub">Receipt · {requirementsText(v.receipt.checklist)}</div>

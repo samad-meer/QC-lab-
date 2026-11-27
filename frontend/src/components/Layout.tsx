@@ -72,7 +72,7 @@ export default function Layout({ children }: { children: ReactNode }) {
   // the window, so work that lands on you shows without changing page.
   const refreshBadges = useCallback(() => {
     apiPoll<Summary>("/api/summary/").then(setSummary).catch(() => setSummary(null));
-    apiPoll<Tasks>("/api/tasks/").then((t) => setTasks(t.actionable)).catch(() => setTasks(0));
+    apiPoll<Tasks>("/api/tasks/?counts=1").then((t) => setTasks(t.actionable)).catch(() => setTasks(0));
   }, []);
 
   useEffect(() => {

@@ -200,11 +200,39 @@ class PersonActivityTests(TeamReportBase):
         self.assertTrue(signed)
         self.assertTrue(all("igned" in self.text(r["what"]) for r in signed))
 
-    def test_anyone_may_print_their_own_but_only_an_exporter_prints_another_persons(self):
+    def test_without_the_permission_their_own_can_be_read_but_not_printed(self):
         self.released_sample()
         self.login(self.analyst)
         definition = self.client.get("/api/reports/person-activity/definition/").data
-        self.assertTrue(definition["can_export"], "the analyst holds no export permission and may still print their own")
+        self.assertFalse(definition["can_export"])
+        self.assertEqual(self.client.get("/api/reports/person-activity/").status_code, 200, "the screen stays open")
+        for kind in ("csv", "xlsx", "pdf"):
+            self.assertEqual(self.client.get(f"/api/reports/person-activity/export/?file={kind}").status_code, 403, kind)
+        self.assertFalse(AuditEvent.objects.filter(action="REPORT_EXPORTED").exists())
+
+    def test_the_permission_to_print_their_own_prints_only_their_own(self):
+        self.released_sample()
+        self.grant(self.analyst, "report.print.own")
+        self.login(self.analyst)
+        self.assertTrue(self.client.get("/api/reports/person-activity/definition/").data["can_export"])
+        self.assertEqual(self.client.get("/api/reports/person-activity/export/?file=pdf").status_code, 200)
+        self.assertEqual(self.client.get(
+            f"/api/reports/person-activity/export/?file=pdf&person={self.checker.id}").status_code, 403)
+        # It opens no other report's downloads.
+        self.assertEqual(self.client.get("/api/reports/sample-register/export/?file=csv").status_code, 403)
+
+    def test_whoever_may_export_reports_prints_their_own_too(self):
+        self.released_sample()
+        self.grant(self.analyst, "report.export")
+        self.login(self.analyst)
+        self.assertEqual(self.client.get("/api/reports/person-activity/export/?file=csv").status_code, 200)
+
+    def test_a_print_says_whose_it_is_and_only_an_exporter_prints_another_persons(self):
+        self.released_sample()
+        self.grant(self.analyst, "report.print.own")
+        self.login(self.analyst)
+        definition = self.client.get("/api/reports/person-activity/definition/").data
+        self.assertTrue(definition["can_export"], "given the permission, the analyst prints their own")
         for kind in ("csv", "xlsx", "pdf"):
             r = self.client.get(f"/api/reports/person-activity/export/?file={kind}")
             self.assertEqual(r.status_code, 200, (kind, r.content[:200]))

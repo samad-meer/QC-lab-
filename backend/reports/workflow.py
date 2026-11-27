@@ -72,14 +72,16 @@ def _named_by(rows: list, accepted: bool = False):
 
 def waiting_work(user) -> list[dict]:
     """One row per sample in the lab: which queue it is in, and who it waits on."""
-    samples = list(visible_samples(user).exclude(status__in=FINISHED))
+    samples = list(visible_samples(user).exclude(status__in=FINISHED).select_related(
+        "assigned_analyst", "product", "review_stage",
+    ))
     ids = [s.pk for s in samples]
     now, today = timezone.now(), timezone.localdate()
 
     moved = dict(WorkflowEvent.objects.filter(sample_id__in=ids).order_by().values_list("sample_id").annotate(Max("at")))
     holds = {h.sample_id: h for h in SampleHold.objects.filter(sample_id__in=ids, released_at__isnull=True)}
     assignments = defaultdict(list)
-    for a in Assignment.objects.filter(sample_id__in=ids, step=TESTING).select_related("to_user") \
+    for a in Assignment.objects.filter(sample_id__in=ids, step=TESTING).select_related("to_user", "created_by") \
             .order_by("responded_at", "created_at", "id"):
         assignments[a.sample_id].append(a)
     with_checks = set(ChecklistItem.objects.filter(

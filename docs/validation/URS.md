@@ -80,7 +80,7 @@ confirm which apply to you. Priority: **M** mandatory, **D** desired.
 | Q2 | An export says who generated it, when and with what filters, and is itself audited | M | ALCOA+ |
 | Q3 | A failed test, a failed sample and a batch disposition are kept apart | M | Brief |
 | Q4 | Change control records every change to specifications, methods and the system | M | EU GMP |
-| Q5 | Anyone can open and print their own activity for a week, a month or any dates; seeing someone else's needs its own permission; the print names the person, the period and the totals, and is itself audited | D | Brief, ALCOA+ |
+| Q5 | Anyone can open their own activity for a week, a month or any dates, and print it when the administrator has given their role that permission; seeing someone else's needs its own permission; the print names the person, the period and the totals, and is itself audited | D | Brief, ALCOA+ |
 | Q6 | Whoever plans the work can see what each person holds, and for each task who gave it, when, and when it falls due, across samples, batch records, investigations and actions | D | Brief |
 | Q7 | A date filter offers the week and the month that have just ended, as well as the current ones | D | Brief |
 | Q8 | The dashboard shows the lab in figures and charts (what is late, how the period compares with the one before, what is coming due, how long work has waited, how long release takes, where failures come from, whether the equipment is in date, what stays inside its limit); each part opens exactly the records it counts, and a chart shows only what its reader may see | D | Brief |

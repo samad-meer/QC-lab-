@@ -294,4 +294,5 @@ def waive(request, pk):
 
 @api_view(["GET"])
 def tasks(request):
-    return Response(tasks_for(request.user))
+    # ?counts=1: the same lists and counts, without what each sample still needs. For the badges.
+    return Response(tasks_for(request.user, detail=request.query_params.get("counts") != "1"))

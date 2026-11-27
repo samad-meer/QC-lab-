@@ -48,7 +48,12 @@ def _returned(sample) -> dict | None:
     }
 
 
-def tasks_for(user) -> dict:
+def tasks_for(user, detail: bool = True) -> dict:
+    """
+    Everything waiting on this person. Without `detail`, each list holds the same samples but not what
+    each still needs (its status and blockers), which is most of the work: the menu badge and the
+    dashboard only count.
+    """
     visible = samples_visible_to(user)
 
     to_accept = [
@@ -72,10 +77,10 @@ def tasks_for(user) -> dict:
             workflow_version__checklist__for_receipt=True, workflow_version__checklist__stage__isnull=True,
         ).distinct().order_by("received_at", "id"):
             step = rules.step_of(s, RECEIPT)
-            receipts.append(_row(
-                s, step, status=rules.step_status(s, step, 1),
-                blockers=[b.message for b in rules.completion_blockers(s, step, 1)][:3],
-            ))
+            receipts.append(_row(s, step, **({
+                "status": rules.step_status(s, step, 1),
+                "blockers": [b.message for b in rules.completion_blockers(s, step, 1)][:3],
+            } if detail else {})))
 
     my_testing, returned, upcoming = [], [], []
     for s in visible.filter(
@@ -89,13 +94,11 @@ def tasks_for(user) -> dict:
         if rules.receipt_open(s):
             upcoming.append(_row(s, step, status="WAITING"))  # reaches them once the receipt checks are done
             continue
-        status = rules.step_status(s, step, attempt)
         back = _returned(s)
-        row = _row(
-            s, step, attempt=attempt, status=status,
-            blockers=[b.message for b in rules.completion_blockers(s, step, attempt)][:3],
-            returned=back,
-        )
+        row = _row(s, step, attempt=attempt, returned=back, **({
+            "status": rules.step_status(s, step, attempt),
+            "blockers": [b.message for b in rules.completion_blockers(s, step, attempt)][:3],
+        } if detail else {}))
         (returned if back else my_testing).append(row)
 
     to_review = []
@@ -109,7 +112,8 @@ def tasks_for(user) -> dict:
             continue  # handed to them (listed under to_accept), or to someone else who must accept it
         to_review.append(_row(
             s, step, needs_taking=who is None and step.requires_acceptance,
-            blockers=[b.message for b in rules.completion_blockers(s, step, rules.attempt_of(s))][:3],
+            **({"blockers": [b.message for b in rules.completion_blockers(s, step, rules.attempt_of(s))][:3]}
+               if detail else {}),
         ))
     queued = {r["sample"]["id"] for r in to_review}
     seen = set()

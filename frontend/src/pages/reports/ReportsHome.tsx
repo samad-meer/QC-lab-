@@ -4,7 +4,7 @@ import { apiGet } from "../../api";
 import { useAuth } from "../../auth";
 import { BarList } from "../../components/Charts";
 import { Message, TableSkeleton } from "../../components/Feedback";
-import LabGlance from "../../components/LabGlance";
+import LabGlance, { GlanceSkeleton } from "../../components/LabGlance";
 import DateRangeFilter from "../../components/list/DateRangeFilter";
 import { TimelineChart } from "../../components/reports/LineCharts";
 import type { ReportCatalogue, ReportDashboard, ReportTile } from "../../types";
@@ -73,7 +73,10 @@ export default function ReportsHome() {
       {error && <div style={{ marginBottom: 16 }}><Message kind="error">{error}</Message></div>}
 
       {!overview ? null : !data && !error ? (
-        <div className="card"><div className="card-body flush"><TableSkeleton rows={5} /></div></div>
+        <>
+          <GlanceSkeleton />
+          <div className="card"><div className="card-body flush"><TableSkeleton rows={5} /></div></div>
+        </>
       ) : data ? (
         <>
           <section className="card" aria-label="Right now">
